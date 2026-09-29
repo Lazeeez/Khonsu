@@ -1,0 +1,40 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "wasm",
+      "displayName": "WebAssembly (Emscripten) — web module + tests + bench",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/wasm",
+      "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "KHONSU_BUILD_WEB": "ON" }
+    },
+    {
+      "name": "native",
+      "displayName": "Native release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/native",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "native-asan",
+      "displayName": "Native ASan + UBSan",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/native-asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "wasm", "configurePreset": "wasm" },
+    { "name": "native", "configurePreset": "native" },
+    { "name": "native-asan", "configurePreset": "native-asan" }
+  ],
+  "testPresets": [
+    { "name": "wasm", "configurePreset": "wasm", "output": { "outputOnFailure": true } },
+    { "name": "native", "configurePreset": "native", "output": { "outputOnFailure": true } },
+    { "name": "native-asan", "configurePreset": "native-asan", "output": { "outputOnFailure": true } }
+  ]
+}
