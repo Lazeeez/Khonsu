@@ -34,6 +34,8 @@ enum class FrameType : std::uint8_t {
   HttpRequest = 33,
   HttpResponse = 34,
   RunEnd = 35,
+  Object = 36,    // content-addressed workspace blob or tree
+  Snapshot = 37,  // workspace root at a point in the run
 };
 
 [[nodiscard]] std::string_view frame_type_name(FrameType t) noexcept;
