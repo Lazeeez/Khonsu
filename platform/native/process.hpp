@@ -10,8 +10,9 @@ namespace khonsu::native {
 // Spawns argv with the current environment plus `env_overrides`, forwards
 // SIGINT/SIGTERM/SIGHUP to it, waits, and returns a shell-style exit code
 // (128 + signal if it was killed). Returns -1 with `error` set if it could not start.
+// `cwd` ("" = inherit) is the child's working directory.
 int run_child(const std::vector<std::string>& argv, const std::vector<std::pair<std::string, std::string>>& env_overrides,
-              std::string* error);
+              const std::string& cwd, std::string* error);
 
 // Shell-quoted rendering of argv for logs and recordings.
 [[nodiscard]] std::string shell_join(const std::vector<std::string>& argv);
