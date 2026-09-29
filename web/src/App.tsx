@@ -5,14 +5,16 @@ import { Landing } from "./Landing";
 // Heavy pages load on demand: the landing page ships no WebAssembly and no canvas code.
 const Viewer = lazy(() => import("./viewer/Viewer").then((m) => ({ default: m.Viewer })));
 const Simulator = lazy(() => import("./Simulator").then((m) => ({ default: m.Simulator })));
+const Play = lazy(() => import("./play/Play").then((m) => ({ default: m.Play })));
 const Bench = lazy(() => import("./components/Bench").then((m) => ({ default: m.Bench })));
 
 const REPO_URL: string | undefined = import.meta.env.VITE_REPO_URL;
 
-type Route = "home" | "viewer" | "simulator" | "bench";
+type Route = "home" | "viewer" | "play" | "simulator" | "bench";
 
 function routeOf(hash: string): Route {
   if (hash.startsWith("#/viewer")) return "viewer";
+  if (hash.startsWith("#/play")) return "play";
   if (hash.startsWith("#/simulator")) return "simulator";
   if (hash.startsWith("#/bench")) return "bench";
   return "home";
@@ -45,6 +47,7 @@ export default function App() {
         </a>
         <nav className="nav">
           {link("viewer", "#/viewer", "Viewer")}
+          {link("play", "#/play", "Play")}
           {link("simulator", "#/simulator", "Simulator")}
           {link("bench", "#/bench", "Benchmarks")}
           {REPO_URL && <a href={`${REPO_URL}#readme`} target="_blank" rel="noreferrer">Docs</a>}
@@ -54,6 +57,7 @@ export default function App() {
       <Suspense fallback={<div className="loading"><div className="moon-spin"><Moon size={44} /></div><div>Loading…</div></div>}>
         {route === "home" && <Landing />}
         {route === "viewer" && <Viewer />}
+        {route === "play" && <Play />}
         {route === "simulator" && <Simulator />}
         {route === "bench" && <Bench />}
       </Suspense>
