@@ -62,7 +62,7 @@ check("record: agent succeeds", rec.returncode == 0, rec.stderr)
 info = show(run)
 calls = info["exchanges"] if info else []
 tools = [e for e in calls if e["tool"]]
-check("record: 2 model calls + 5 tool calls captured", len(calls) == 7 and len(tools) == 5,
+check("record: 2 model calls + 6 tool calls captured", len(calls) == 8 and len(tools) == 6,
       json.dumps(calls, indent=1)[:1500])
 check("record: a snapshot before every call, plus start and end", info and info["snapshots"] == len(calls) + 2, str(info))
 check("record: side effect happened once", lines(SIDE) == ["agent finished"], str(lines(SIDE)))
@@ -108,6 +108,8 @@ rp = run_in(replay_dir, "replay", str(run), "-w", str(replay_dir), "--", *AGENT)
 check("replay: identical output, including the recorded clock", rp.returncode == 0 and rp.stdout == rec.stdout,
       f"{rec.stdout}\n---\n{rp.stdout}\n{rp.stderr}")
 check("replay: external side effect NOT repeated", lines(SIDE) == ["agent finished"], str(lines(SIDE)))
+check("replay: a rerun tool's differing report is flagged and the recorded one returned",
+      "tool __main__.lint re-ran with a different result" in rp.stderr, rp.stderr)
 check("replay: workspace identical to the recording at every call", "workspace identical" in rp.stderr, rp.stderr)
 
 # 4 ─ A stray file in the workspace is reported, with its path.
