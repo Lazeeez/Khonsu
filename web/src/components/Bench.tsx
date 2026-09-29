@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { KernelClient } from "../kernel/client";
+import { kernel } from "../kernel/client";
 import type { BenchForkRow, BenchResult } from "../kernel/types";
 import reference from "../lib/reference-bench.json";
 import { fmtNs } from "../lib/ui";
@@ -61,7 +61,8 @@ function LogChart({ rows, metric }: { rows: BenchForkRow[]; metric: Metric }) {
   );
 }
 
-export function Bench({ client }: { client: KernelClient }) {
+export function Bench() {
+  const client = kernel();
   const [result, setResult] = useState<BenchResult>(reference as BenchResult);
   const [live, setLive] = useState(false);
   const [running, setRunning] = useState(false);
