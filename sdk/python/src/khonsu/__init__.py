@@ -12,9 +12,10 @@ running the tool**, so side effects are not repeated and the run is
 reproducible. Outside Khonsu the decorator does nothing.
 
 Tools whose effect *is* the workspace (writing a file the agent reads back)
-should use ``@khonsu.tool(replay="rerun")``: on replay they run again and their
-result is checked against the recording, while Khonsu's workspace snapshots
-verify the files they produced.
+should use ``@khonsu.tool(replay="rerun")``: on replay they run again for their
+effect, a result that differs from the recording is reported, and the agent gets
+the recorded result, so the replay stays on the recorded path. Khonsu's
+workspace snapshots verify the files they produced.
 
 Arguments and results must be JSON-compatible (tuples come back as lists).
 """
@@ -105,8 +106,8 @@ def tool(*, name: str | None = None, replay: str = "skip") -> Callable[[F], F]: 
 
 def tool(fn: F | None = None, *, name: str | None = None, replay: str = "skip"):
     """Record a tool's calls. On replay, ``replay="skip"`` (default) returns the
-    recorded result without running the tool; ``replay="rerun"`` runs it again and
-    warns if its result differs from the recording."""
+    recorded result without running the tool; ``replay="rerun"`` runs it again for
+    its effect, warns if its result differs, and returns the recorded result."""
     if replay not in ("skip", "rerun"):
         raise ValueError('khonsu.tool: replay must be "skip" or "rerun"')
 
@@ -125,10 +126,15 @@ def tool(fn: F | None = None, *, name: str | None = None, replay: str = "skip"):
             if answer.get("action") == "replay":
                 outcome = answer["outcome"]
                 if replay == "rerun":
-                    result = _jsonable(f(*args, **kwargs), "the return value")
-                    if not outcome.get("ok") or outcome.get("result") != result:
-                        print(f"[khonsu] tool {tool_name} returned a different result than recorded", file=sys.stderr)
-                    return result
+                    # Run again for the effect; hand the agent the recorded result so the
+                    # replay stays on the recorded path (pytest timings, PIDs, ... differ).
+                    try:
+                        fresh = {"ok": True, "result": _jsonable(f(*args, **kwargs), "the return value")}
+                    except Exception as e:
+                        fresh = {"ok": False, "error": {"type": type(e).__name__, "message": str(e)}}
+                    if fresh != {k: outcome.get(k) for k in fresh}:
+                        print(f"[khonsu] tool {tool_name} re-ran with a different result than recorded; "
+                              "returning the recorded one", file=sys.stderr)
                 if outcome.get("ok"):
                     return outcome.get("result")
                 _raise_recorded(outcome.get("error", {}))
