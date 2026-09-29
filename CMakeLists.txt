@@ -31,6 +31,7 @@ add_library(khonsu_kernel STATIC
   kernel/src/rundiff.cpp
   kernel/src/crdt.cpp
   kernel/src/pack.cpp
+  kernel/src/views.cpp
   kernel/src/model.cpp
   kernel/src/kernel.cpp
   kernel/src/bench.cpp
