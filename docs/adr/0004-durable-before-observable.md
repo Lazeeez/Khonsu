@@ -16,8 +16,15 @@ format), written by `FileLog`:
 - One `write()` per frame; `fdatasync()` (`F_FULLFSYNC` on macOS) to make it durable, and a
   directory `fsync` when the file is created.
 - **Ordering rule:** the response frame is fsync'd *before* the agent can see a complete
-  response. For buffered responses that means before the body is sent; for streams, before
-  the terminating chunk, which is when SDKs consider a stream finished.
+  response. For buffered responses that means before the body is sent. For streams, it means
+  before the **terminal event** (`data: [DONE]` for OpenAI, `message_stop` for Anthropic) is
+  sent: the chunk carrying it is held back until the frame is durable, and every earlier chunk
+  is forwarded immediately, so token latency is unchanged.
+
+  An earlier version held back only the HTTP terminating chunk (`0\r\n\r\n`), assuming SDKs
+  finish a stream there. The kill -9 test caught it under CPU load: the OpenAI SDK finishes
+  on `[DONE]`, a few hundred microseconds before the terminating chunk, so an agent could
+  observe a response that wasn't yet durable. The rule above closes that window.
 - **Recovery:** on open, keep the longest prefix of valid frames and truncate the rest (torn
   write). `RunEnd` carries a hash chain over every frame's CRC, so rewriting history is
   detectable even when every individual CRC is valid.
