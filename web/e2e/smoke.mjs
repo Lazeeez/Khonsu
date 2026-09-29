@@ -1,7 +1,7 @@
 // End-to-end smoke test against a served build (vite preview / GitHub Pages).
 // Usage: node e2e/smoke.mjs [baseUrl] [screenshotDir]
 import { chromium } from "playwright";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 
 const base = process.argv[2] ?? "http://localhost:4173/Khonsu/";
 const shots = process.argv[3];
@@ -15,51 +15,73 @@ page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 
 const shot = async (name) => shots && page.screenshot({ path: `${shots}/${name}.png`, fullPage: true });
 const expectText = async (text, timeout = 15000) => page.getByText(text, { exact: false }).first().waitFor({ timeout });
-const chapter = (title) => page.locator(".chapter", { hasText: title }).getByRole("button");
+const step = (name) => console.log(`  · ${name}`);
 
+// ── landing ──────────────────────────────────────────────────────────────────────────────────
 await page.goto(base);
+await expectText("Travel back to the moment");
+step("landing renders");
+await page.waitForTimeout(600);
+await shot("01-landing");
+
+// ── viewer: open a recorded run from the landing CTA ──────────────────────────────────────────
+await page.getByRole("link", { name: "Open a recorded run" }).click();
+await expectText("integrity verified");
+const dial = page.getByRole("slider", { name: /Moon Dial/ });
+await dial.focus();
+await page.keyboard.press("ArrowRight");        // → call #1: the first model call
+await expectText("Add a greeting endpoint");    // its prompt, rendered from the .khn by the wasm kernel
+step("viewer loads a .khn and renders call detail");
+await page.keyboard.press("ArrowRight");        // → call #2 (write_file)
+await expectText("this call changed 1 file");
+await page.locator(".file.changed").first().click();
+await page.locator(".difflines .add").first().waitFor();
+step("dial navigates; workspace diff for the call renders");
+await shot("02-viewer");
+
+await page.getByRole("button", { name: "Compare with a re-run" }).click();
+await expectText("First divergence");
+step("compare: run diff finds the first divergence");
+await shot("03-compare");
+
+// Drop-in import of an OpenTelemetry GenAI trace (no .khn needed).
+const otel = readFileSync(new URL("./fixtures/otel-genai.json", import.meta.url));
+await page.locator('input[type="file"]').first().setInputFiles({ name: "trace.json", mimeType: "application/json", buffer: otel });
+await expectText("opentelemetry");
+await expectText("What is the capital of Egypt?");
+step("OpenTelemetry GenAI trace imported");
+
+// ── simulator (the deterministic kernel) ──────────────────────────────────────────────────────
+await page.goto(base + "#/simulator");
 await expectText("Recorded run of issue #42");
-await page.waitForTimeout(900);
-await shot("01-boot");
-
-await chapter("Root cause").click();
-await expectText("hallucinated API");
-await shot("02-root-cause");
-
+const chapter = (title) => page.locator(".chapter", { hasText: title }).getByRole("button");
 await chapter("Fork & fix").click();
 await expectText("LLM calls replayed from the recording");
-await page.waitForTimeout(600);
-await shot("03-fork-fix");
-
-await chapter("Speculate").click();
-await expectText("Speculated 8 sampled branches");
-await page.waitForTimeout(600);
-await shot("04-speculate");
-
 await chapter("Trust, but verify").click();
 await expectText("divergence at step", 20000);
-await shot("05-verify-tamper");
+step("simulator: fork + verify/tamper");
+await page.waitForTimeout(400);
+await shot("04-simulator");
 
-await chapter("Chaos").click();
-await expectText("replayed bit-exactly");
-await page.waitForTimeout(500);
-await shot("06-chaos");
-
+// ── benchmarks ────────────────────────────────────────────────────────────────────────────────
 await page.goto(base + "#/bench");
 await expectText("Fork latency vs state size");
 await page.getByRole("button", { name: /Quick run/ }).click();
 await expectText("live result from this browser", 60000);
-await shot("07-bench");
+step("benchmarks run in the browser");
+await shot("05-bench");
 
-// Mobile layout sanity: no horizontal overflow.
+// ── mobile: no horizontal overflow on the main pages ──────────────────────────────────────────
 await page.setViewportSize({ width: 390, height: 844 });
-await page.goto(base);
-await expectText("Recorded run of issue #42");
-const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-await shot("08-mobile");
+for (const [route, marker] of [["", "Travel back"], ["#/viewer?src=coding-agent.khn", "integrity verified"]]) {
+  await page.goto(base + route);
+  await expectText(marker);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  if (overflow > 1) errors.push(`horizontal overflow on mobile (${route || "landing"}): ${overflow}px`);
+}
+await shot("06-mobile-viewer");
 
 await browser.close();
-if (overflow > 1) errors.push(`horizontal overflow on mobile: ${overflow}px`);
 if (errors.length) {
   console.error("E2E FAILED:\n" + errors.join("\n"));
   process.exit(1);
