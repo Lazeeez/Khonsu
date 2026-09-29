@@ -260,7 +260,7 @@ Listener::~Listener() {
   close();
 }
 
-bool Listener::listen(std::uint16_t port, std::string* error) {
+bool Listener::listen(std::uint16_t port, std::string* error, const std::string& host) {
   const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
   if (fd < 0) {
     if (error) *error = std::strerror(errno);
@@ -271,10 +271,13 @@ bool Listener::listen(std::uint16_t port, std::string* error) {
   ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
   sockaddr_in a{};
   a.sin_family = AF_INET;
-  a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);  // never exposed beyond this machine
   a.sin_port = htons(port);
+  if (::inet_pton(AF_INET, host.c_str(), &a.sin_addr) != 1) {
+    if (error) *error = "bad bind address " + host;
+    return false;
+  }
   if (::bind(fd, reinterpret_cast<sockaddr*>(&a), sizeof a) != 0 || ::listen(fd, 128) != 0) {
-    if (error) *error = "bind 127.0.0.1:" + std::to_string(port) + ": " + std::strerror(errno);
+    if (error) *error = "bind " + host + ":" + std::to_string(port) + ": " + std::strerror(errno);
     return false;
   }
   socklen_t len = sizeof a;
