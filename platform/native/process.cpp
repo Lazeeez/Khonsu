@@ -49,7 +49,7 @@ std::string current_dir() {
 }
 
 int run_child(const std::vector<std::string>& argv, const std::vector<std::pair<std::string, std::string>>& env_overrides,
-              std::string* error) {
+              const std::string& cwd, std::string* error) {
   if (argv.empty()) {
     if (error) *error = "no command given";
     return -1;
@@ -80,8 +80,12 @@ int run_child(const std::vector<std::string>& argv, const std::vector<std::pair<
   ::sigaction(SIGTERM, &sa, &old_term);
   ::sigaction(SIGHUP, &sa, &old_hup);
 
+  posix_spawn_file_actions_t actions;
+  ::posix_spawn_file_actions_init(&actions);
+  if (!cwd.empty()) ::posix_spawn_file_actions_addchdir_np(&actions, cwd.c_str());
   pid_t pid = 0;
-  const int rc = ::posix_spawnp(&pid, cargv[0], nullptr, nullptr, cargv.data(), cenv.data());
+  const int rc = ::posix_spawnp(&pid, cargv[0], &actions, nullptr, cargv.data(), cenv.data());
+  ::posix_spawn_file_actions_destroy(&actions);
   if (rc != 0) {
     if (error) *error = argv[0] + ": " + std::strerror(rc);
     ::sigaction(SIGINT, &old_int, nullptr);
