@@ -17,6 +17,7 @@
 #include "khonsu/common.hpp"
 #include "khonsu/jsonv.hpp"
 #include "khonsu/log.hpp"
+#include "khonsu/snapshot.hpp"
 
 #include <cstdint>
 #include <mutex>
@@ -30,6 +31,9 @@ namespace khonsu::rec {
 
 inline constexpr std::string_view kFormatVersion = "khonsu-recording/1";
 
+// Tool calls recorded through the SDK (@khonsu.tool) use this path in Request frames.
+inline constexpr std::string_view kToolPath = "/khonsu/v1/tool";
+
 struct RunInfo {
   std::string format{kFormatVersion};
   std::string tool_version;
@@ -37,6 +41,7 @@ struct RunInfo {
   std::string command;   // human-readable command line
   std::string cwd;
   std::string upstream;  // e.g. http://localhost:11434/v1
+  std::string workspace; // snapshotted directory ("" if workspace capture was off)
   std::string parent;    // digest of the recording this one forked from ("" if none)
   std::uint64_t started_unix_ms = 0;
 };
@@ -101,6 +106,8 @@ struct Recording {
   RunInfo run;
   std::vector<Exchange> exchanges;  // ordered by seq
   std::optional<RunEnd> end;        // absent if the run crashed
+  ws::ObjectMap objects;            // workspace blobs and trees
+  std::vector<ws::Snapshot> snapshots;  // in recording order
   RecoveryReport recovery;          // torn tail / corruption found while loading
   bool chain_ok = true;             // RunEnd.chain matched (true if no RunEnd)
   Digest128 digest;                 // identity of the recording (chain at load)
@@ -108,6 +115,11 @@ struct Recording {
   // Loads a serialized EventLog. Frames after the first corrupt one are dropped
   // (WAL-style recovery). Returns nullopt only if the file is not a recording.
   static std::optional<Recording> load(std::span<const std::byte> bytes, std::string* error = nullptr);
+
+  // Workspace root before request `seq`, at run start, or at run end (nullptr if not captured).
+  [[nodiscard]] const ws::Snapshot* snapshot_before(std::uint64_t seq) const;
+  [[nodiscard]] const ws::Snapshot* snapshot_at(ws::When when) const;
+  [[nodiscard]] const Exchange* exchange(std::uint64_t seq) const;
 };
 
 // Summary fields pulled from OpenAI-compatible bodies (for `khonsu show` and the viewer).
@@ -123,12 +135,14 @@ struct ExchangeSummary {
 // ---- replay matching ------------------------------------------------------------------
 class ReplayIndex {
 public:
-  explicit ReplayIndex(const Recording& r);
+  // Exchanges with seq >= live_from are excluded, so those requests go live ("fork at N").
+  explicit ReplayIndex(const Recording& r, std::uint64_t live_from = UINT64_MAX);
 
   struct Miss {
     std::uint64_t expected_seq = 0;  // the request the recording expected next
     std::string field_path;          // first differing JSON path ("" if not comparable)
     std::string expected_value, actual_value;  // truncated renderings of that field
+    bool exhausted = false;          // every replayable exchange was already served
   };
 
   // Thread-safe. Returns the recorded exchange for this request, or nullptr and
@@ -136,6 +150,9 @@ public:
   const Exchange* take(const Digest128& key, std::string_view canonical_body, Miss* miss);
 
   [[nodiscard]] std::size_t served() const;
+  // True if the request matches an exchange excluded by live_from: going live there is
+  // the point of a fork, not a divergence.
+  [[nodiscard]] bool excluded(const Digest128& key) const;
   [[nodiscard]] std::size_t total() const { return rec_.exchanges.size(); }
 
 private:
@@ -147,6 +164,7 @@ private:
   std::unordered_map<Digest128, std::vector<std::size_t>, DigestHasher> by_key_;  // key -> exchange indices
   std::unordered_map<Digest128, std::size_t, DigestHasher> next_;                // key -> next occurrence
   std::vector<bool> used_;
+  std::unordered_map<Digest128, bool, DigestHasher> excluded_;
   std::size_t served_ = 0;
 };
 
