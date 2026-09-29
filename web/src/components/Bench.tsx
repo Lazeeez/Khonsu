@@ -3,6 +3,7 @@ import { kernel } from "../kernel/client";
 import type { BenchForkRow, BenchResult } from "../kernel/types";
 import reference from "../lib/reference-bench.json";
 import { fmtNs } from "../lib/ui";
+import { Results } from "./Results";
 
 const SERIES = [
   { key: "khonsu", label: "Khonsu: persistent Merkle tree", color: "#f5c26b" },
@@ -100,6 +101,8 @@ export function Bench() {
         </div>
         {err && <div className="panel-b"><div className="callout bad">{err}</div></div>}
       </div>
+
+      <Results />
 
       <div className="panel">
         <div className="panel-b tiles">
