@@ -20,7 +20,8 @@ const step = (name) => console.log(`  · ${name}`);
 // ── landing ──────────────────────────────────────────────────────────────────────────────────
 await page.goto(base);
 await expectText("Travel back to the moment");
-step("landing renders");
+await expectText("The same agent, the same task, three times.");
+step("landing renders, with the study evidence");
 await page.waitForTimeout(600);
 await shot("01-landing");
 
