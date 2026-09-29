@@ -454,3 +454,80 @@ pre.code.bad { color: #ffc0c0; }
   .dial-panel { position: static; max-height: none; }
   .calllist { max-height: 260px; }
 }
+
+/* ---- play: fork a running program ----------------------------------------------------- */
+.play { padding: 14px 18px 24px; display: grid; gap: 14px; align-content: start; }
+.play-intro .panel-b { padding: 14px 18px; }
+.play-intro .eyebrow { margin-bottom: 6px; }
+.small-lede { font-size: 14px; margin: 0; max-width: 980px; }
+.play kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line-2); border-radius: 4px; padding: 0 5px; color: var(--gold-2); }
+.play-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr) minmax(0, .95fr); gap: 14px; align-items: start; }
+.code { display: grid; grid-template-columns: 38px minmax(0, 1fr); border: 1px solid var(--line); border-radius: 10px; background: rgba(5,10,24,.6); overflow: hidden; height: 460px; }
+.gutter { overflow: hidden; padding: 10px 0; font: 12px/1.6 var(--mono); color: var(--text-3); text-align: right; user-select: none; border-right: 1px solid var(--line); }
+.gutter div { padding-right: 8px; height: 19.2px; }
+.gutter .cur { color: var(--bg); background: var(--gold); font-weight: 700; }
+.gutter .err { color: #fff; background: var(--bad); }
+.code textarea { resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font: 12px/1.6 var(--mono); padding: 10px 12px; white-space: pre; overflow: auto; tab-size: 2; min-width: 0; }
+.code:focus-within { border-color: var(--line-2); box-shadow: 0 0 0 3px rgba(233,185,73,.12); }
+.bad-callout { margin-top: 8px; border-color: rgba(255,107,107,.45); color: #ffc2c2; font-family: var(--mono); font-size: 12px; }
+.lang { margin-top: 10px; line-height: 1.9; }
+.lang summary { cursor: pointer; color: var(--text-2); }
+.seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 9px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 4px 9px; cursor: pointer; color: var(--text-2); font-size: 12px; }
+.seg button.on { background: var(--surface-3); color: var(--gold-2); }
+.btn.gold { border-color: rgba(233,185,73,.55); color: var(--gold-2); background: rgba(233,185,73,.1); }
+.btn.gold:hover { background: rgba(233,185,73,.18); }
+.tree { display: grid; gap: 3px; max-height: 300px; overflow: auto; }
+.tree-row { display: grid; grid-template-columns: 10px 34px minmax(60px, 1fr) minmax(0, 1.2fr) auto; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; cursor: pointer; text-align: left; color: var(--text-2); }
+.tree-row:hover { background: var(--surface-2); }
+.tree-row.sel { background: var(--surface-2); border-color: var(--line-2); color: var(--text); }
+.bar { position: relative; height: 6px; border-radius: 4px; background: rgba(255,255,255,.05); overflow: hidden; }
+.bar-fill, .bar-inherited { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+.bar-fill { opacity: .85; transition: width .15s linear; }
+.bar-inherited { background: rgba(255,255,255,.28); z-index: 1; border-right: 2px solid var(--bg); }
+.tree-last { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip.tiny { font-size: 10.5px; padding: 1px 6px; }
+.status-halted { color: var(--good); }
+.status-error, .status-out-of-gas { color: var(--bad); }
+.status-running { color: var(--gold); }
+.play-transport { padding: 12px 0 0; border-top: 0; }
+.spec { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.spec input, .spec select, .var input { background: var(--surface-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 7px; padding: 4px 7px; }
+.spec-table { margin-top: 12px; display: grid; gap: 6px; }
+.spec-rows { display: grid; gap: 2px; max-height: 260px; overflow: auto; }
+.spec-row { display: grid; grid-template-columns: 40px minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; padding: 5px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2); cursor: pointer; text-align: left; }
+.spec-row:hover { background: var(--surface-2); }
+.gold-t { color: var(--gold); }
+.bad-t { color: var(--bad); }
+.play-inspect { position: sticky; top: 76px; max-height: calc(100vh - 92px); display: flex; flex-direction: column; }
+.play-inspect-b { overflow: auto; }
+.vars { display: grid; gap: 3px; }
+.var { display: grid; grid-template-columns: minmax(70px, 1fr) minmax(0, 1.4fr); gap: 8px; align-items: center; }
+.var input { width: 100%; min-width: 0; }
+.vm-out { margin: 0; max-height: 180px; overflow: auto; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: rgba(5,10,24,.6); font: 12px/1.5 var(--mono); color: var(--faience); white-space: pre-wrap; overflow-wrap: anywhere; }
+.vm-pages { display: grid; gap: 8px; }
+.pagecanvas { width: 100%; display: block; image-rendering: pixelated; }
+@media (max-width: 1250px) {
+  .play-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .play-inspect { grid-column: span 2; position: static; max-height: none; }
+}
+@media (max-width: 800px) {
+  .play { padding: 10px 16px 20px; }
+  .play-grid { grid-template-columns: minmax(0, 1fr); }
+  .play-inspect { grid-column: auto; }
+  .code { height: 320px; }
+  .tree-row { grid-template-columns: 10px 34px minmax(40px, 1fr) auto; }
+  .tree-last { display: none; }
+}
+
+/* ---- benchmarks: against the alternatives ------------------------------------------------ */
+.results-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.results-grid h3 { font-family: var(--display); font-size: 15px; font-weight: 600; color: var(--gold-2); margin: 0 0 6px; letter-spacing: .02em; }
+.results-grid .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.results-table td:first-child { font-family: var(--sans); color: var(--text-2); }
+@media (max-width: 1250px) { .results-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 800px) {
+  .results-grid .tiles { grid-template-columns: minmax(0, 1fr); }
+  .results-table { font-size: 11px; }
+  .results-table th, .results-table td { padding: 5px 4px; }
+}
