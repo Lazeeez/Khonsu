@@ -1,0 +1,46 @@
+{
+  "time_travel": {
+    "trials": 10,
+    "langgraph_resume_distinct_outcomes": 10,
+    "khonsu_replay_distinct_outcomes": 1,
+    "langgraph_tool_reexecutions_during_resume": 0,
+    "note": "LangGraph restores state then re-calls the model; Khonsu serves recorded responses. Khonsu's undecorated tool still re-runs; with @khonsu.tool it would not."
+  },
+  "storage_growth": [
+    {
+      "turns": 1,
+      "langgraph_checkpoints": 5,
+      "langgraph_sqlite_payload_bytes": 10325,
+      "khonsu_recording_bytes": 2456
+    },
+    {
+      "turns": 5,
+      "langgraph_checkpoints": 17,
+      "langgraph_sqlite_payload_bytes": 60542,
+      "khonsu_recording_bytes": 8792
+    },
+    {
+      "turns": 10,
+      "langgraph_checkpoints": 32,
+      "langgraph_sqlite_payload_bytes": 179884,
+      "khonsu_recording_bytes": 20280
+    },
+    {
+      "turns": 20,
+      "langgraph_checkpoints": 62,
+      "langgraph_sqlite_payload_bytes": 602314,
+      "khonsu_recording_bytes": 54472
+    },
+    {
+      "turns": 40,
+      "langgraph_checkpoints": 122,
+      "langgraph_sqlite_payload_bytes": 2191613,
+      "khonsu_recording_bytes": 175328
+    }
+  ],
+  "overhead_10_turns": {
+    "inmemory_saver_s": 0.0723,
+    "sqlite_saver_s": 0.1323,
+    "inmemory_saver_plus_khonsu_record_s": 0.0957
+  }
+}
