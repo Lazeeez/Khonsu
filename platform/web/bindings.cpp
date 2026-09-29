@@ -7,6 +7,9 @@
 #include "khonsu/bench.hpp"
 #include "khonsu/json.hpp"
 #include "khonsu/kernel.hpp"
+#include "khonsu/recording.hpp"
+#include "khonsu/rundiff.hpp"
+#include "khonsu/views.hpp"
 
 #include <emscripten/emscripten.h>
 
@@ -172,6 +175,25 @@ bool is_text(std::string_view s) {
   return std::none_of(s.begin(), s.end(), [](char c) { return c == '\0'; });
 }
 
+}  // namespace
+
+namespace {
+std::vector<std::unique_ptr<rec::Recording>> g_recs;
+
+const rec::Recording* rec_at(int h) {
+  return h >= 0 && static_cast<std::size_t>(h) < g_recs.size() ? g_recs[static_cast<std::size_t>(h)].get() : nullptr;
+}
+
+template <class F>
+const char* with_rec(int h, F&& f) {
+  try {
+    const rec::Recording* r = rec_at(h);
+    if (!r) return error("no such recording");
+    return emit(f(*r));
+  } catch (const std::exception& e) {
+    return error(e.what());
+  }
+}
 }  // namespace
 
 extern "C" {
@@ -445,6 +467,56 @@ EMSCRIPTEN_KEEPALIVE const char* kh_import(const std::byte* data, int len) {
     j.field("error", err).end_object();
     return emit(j.take());
   });
+}
+
+// ---- Recordings (the viewer): load a .khn and explore it -----------------------------------
+
+
+// Returns {"handle":N,...recording view...} or {"error":...}. Frames after the first
+// corrupt one are dropped (WAL recovery) and reported in "recovery".
+EMSCRIPTEN_KEEPALIVE const char* kh_rec_load(const std::byte* data, int len) {
+  try {
+    std::string err;
+    auto r = rec::Recording::load({data, static_cast<std::size_t>(len)}, &err);
+    if (!r) return error(err);
+    g_recs.push_back(std::make_unique<rec::Recording>(std::move(*r)));
+    const int h = static_cast<int>(g_recs.size() - 1);
+    std::string view = views::recording(*g_recs.back());
+    return emit("{\"handle\":" + std::to_string(h) + "," + view.substr(1));
+  } catch (const std::exception& e) {
+    return error(e.what());
+  }
+}
+
+EMSCRIPTEN_KEEPALIVE const char* kh_rec_call(int h, int index) {
+  return with_rec(h, [&](const rec::Recording& r) { return views::call(r, static_cast<std::size_t>(index)); });
+}
+
+EMSCRIPTEN_KEEPALIVE const char* kh_rec_files(int h, const char* root) {
+  return with_rec(h, [&](const rec::Recording& r) { return views::files(r, root); });
+}
+
+EMSCRIPTEN_KEEPALIVE const char* kh_rec_file(int h, const char* root, const char* path) {
+  return with_rec(h, [&](const rec::Recording& r) { return views::file(r, root, path); });
+}
+
+EMSCRIPTEN_KEEPALIVE const char* kh_rec_changes(int h, const char* from, const char* to) {
+  return with_rec(h, [&](const rec::Recording& r) { return views::changes(r, from, to); });
+}
+
+EMSCRIPTEN_KEEPALIVE const char* kh_rec_diff(int a, int b) {
+  try {
+    const rec::Recording* ra = rec_at(a);
+    const rec::Recording* rb = rec_at(b);
+    if (!ra || !rb) return error("no such recording");
+    return emit(views::diff(rec::diff_runs(*ra, *rb), *ra, *rb));
+  } catch (const std::exception& e) {
+    return error(e.what());
+  }
+}
+
+EMSCRIPTEN_KEEPALIVE void kh_rec_close(int h) {
+  if (rec_at(h)) g_recs[static_cast<std::size_t>(h)].reset();
 }
 
 EMSCRIPTEN_KEEPALIVE const char* kh_bench(int quick) {
