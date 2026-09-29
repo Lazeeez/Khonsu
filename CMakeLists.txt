@@ -25,6 +25,8 @@ add_library(khonsu_kernel STATIC
   kernel/src/store.cpp
   kernel/src/log.cpp
   kernel/src/json.cpp
+  kernel/src/jsonv.cpp
+  kernel/src/recording.cpp
   kernel/src/model.cpp
   kernel/src/kernel.cpp
   kernel/src/bench.cpp
@@ -34,7 +36,8 @@ target_compile_options(khonsu_kernel PRIVATE ${KHONSU_WARNINGS} ${KHONSU_DETERMI
 
 if(KHONSU_BUILD_TESTS)
   enable_testing()
-  add_executable(khonsu_tests tests/main.cpp tests/test_store.cpp tests/test_log.cpp tests/test_kernel.cpp)
+  add_executable(khonsu_tests tests/main.cpp tests/test_store.cpp tests/test_log.cpp tests/test_kernel.cpp
+    tests/test_jsonv.cpp tests/test_recording.cpp)
   target_link_libraries(khonsu_tests PRIVATE khonsu_kernel)
   target_compile_options(khonsu_tests PRIVATE ${KHONSU_TARGET_FLAGS})
   if(EMSCRIPTEN)
@@ -52,6 +55,28 @@ if(KHONSU_BUILD_BENCH)
   if(EMSCRIPTEN)
     target_link_options(khonsu_bench PRIVATE -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB -sSTACK_SIZE=1048576
                         -sEXIT_RUNTIME=1)
+  endif()
+endif()
+
+# Native CLI: `khonsu record | replay | serve | show | verify` (POSIX; Linux today).
+if(NOT EMSCRIPTEN AND UNIX)
+  find_package(Threads REQUIRED)
+  find_package(OpenSSL)
+  add_executable(khonsu
+    platform/native/main.cpp
+    platform/native/proxy.cpp
+    platform/native/http.cpp
+    platform/native/net.cpp
+    platform/native/file_log.cpp
+    platform/native/process.cpp)
+  target_link_libraries(khonsu PRIVATE khonsu_kernel Threads::Threads)
+  target_compile_options(khonsu PRIVATE ${KHONSU_WARNINGS})
+  if(OpenSSL_FOUND)
+    target_link_libraries(khonsu PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    target_compile_definitions(khonsu PRIVATE KHONSU_WITH_TLS=1)
+  else()
+    message(WARNING "OpenSSL not found: khonsu will only reach http:// upstreams")
+    target_compile_definitions(khonsu PRIVATE KHONSU_WITH_TLS=0)
   endif()
 endif()
 
