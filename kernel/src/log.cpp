@@ -75,6 +75,10 @@ std::string_view frame_type_name(FrameType t) noexcept {
     case FrameType::Fork: return "Fork";
     case FrameType::UserEdit: return "UserEdit";
     case FrameType::Fault: return "Fault";
+    case FrameType::RunStart: return "RunStart";
+    case FrameType::HttpRequest: return "HttpRequest";
+    case FrameType::HttpResponse: return "HttpResponse";
+    case FrameType::RunEnd: return "RunEnd";
   }
   return "Unknown";
 }
@@ -98,22 +102,41 @@ FrameHeader read_header(const std::byte* p) {
 static_assert(std::endian::native == std::endian::little, "big-endian hosts need byteswapping in read/write");
 }  // namespace
 
+namespace {
+void write_frame(std::byte* dst, std::uint64_t lsn, FrameType type, std::uint16_t actor, std::uint64_t vtime_us,
+                 std::span<const std::byte> payload, std::uint8_t flags) {
+  FrameHeader h{kFrameMagic, 0, lsn, vtime_us, static_cast<std::uint32_t>(payload.size()), type, flags, actor};
+  std::memcpy(dst, &h, sizeof h);
+  if (!payload.empty()) std::memcpy(dst + kHeader, payload.data(), payload.size());
+  h.crc32c = crc32c({dst + kCrcStart, kHeader - kCrcStart + payload.size()});
+  std::memcpy(dst + 4, &h.crc32c, 4);
+}
+}  // namespace
+
 std::uint64_t EventLog::append(FrameType type, std::uint16_t actor, std::uint64_t vtime_us,
                                std::span<const std::byte> payload, std::uint8_t flags) {
   if (payload.size() > 0xffffffffu) throw std::length_error("khonsu: frame payload too large");
   const std::uint64_t lsn = index_.size();
   const std::size_t off = data_.size();
-  const std::size_t total = kHeader + padded(payload.size());
-  data_.resize(off + total, std::byte{0});
-
-  FrameHeader h{kFrameMagic, 0, lsn, vtime_us, static_cast<std::uint32_t>(payload.size()), type, flags, actor};
-  std::memcpy(data_.data() + off, &h, sizeof h);
-  if (!payload.empty()) std::memcpy(data_.data() + off + kHeader, payload.data(), payload.size());
-  h.crc32c = crc32c({data_.data() + off + kCrcStart, kHeader - kCrcStart + payload.size()});
-  std::memcpy(data_.data() + off + 4, &h.crc32c, 4);
-
+  data_.resize(off + kHeader + padded(payload.size()), std::byte{0});
+  write_frame(data_.data() + off, lsn, type, actor, vtime_us, payload, flags);
   index_.push_back(off);
   return lsn;
+}
+
+std::vector<std::byte> EventLog::encode_frame(std::uint64_t lsn, FrameType type, std::uint16_t actor,
+                                              std::uint64_t vtime_us, std::span<const std::byte> payload,
+                                              std::uint8_t flags) {
+  if (payload.size() > 0xffffffffu) throw std::length_error("khonsu: frame payload too large");
+  std::vector<std::byte> out(kHeader + padded(payload.size()), std::byte{0});
+  write_frame(out.data(), lsn, type, actor, vtime_us, payload, flags);
+  return out;
+}
+
+std::vector<std::byte> EventLog::file_header() {
+  std::vector<std::byte> out(16, std::byte{0});
+  std::memcpy(out.data(), kFileMagic.data(), 8);  // frame count left 0: parse() scans frames
+  return out;
 }
 
 FrameView EventLog::frame(std::uint64_t lsn) const {
