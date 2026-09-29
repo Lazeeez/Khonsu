@@ -84,6 +84,20 @@ $ khonsu diff yesterday.khn today.khn
   ≠ A#1   B#1   mock-1  at messages[2].tool_calls[0].function.arguments
 ```
 
+## Share runs with your team
+
+```console
+$ khonsu store add .khonsu/runs/*.khn                         # content-addressed; workspaces deduplicated
+$ khonsu annotate refund-bug@12 "hallucinated order id" --label root-cause
+$ khonsu sync /mnt/team-share/khonsu                           # or: khonsu sync http://khonsu.internal:7400
+☾ khonsu synced with /mnt/team-share/khonsu: 3/256 buckets differed · sent 5 objects (4.0 KiB) · received 2 (1.1 KiB) · 4 recordings, 3 notes
+$ khonsu store get refund-bug -o refund-bug.khn                # byte-identical on any machine
+```
+
+- **Merkle anti-entropy.** Stores compare a 256-bucket Merkle summary, then exchange ids only for the buckets that differ, so work scales with the difference: already-synced stores settle in one root comparison. Pushing a fork of a shared run sent **4 KiB for a 1.37 MB recording**.
+- **No coordinator, no conflicts.** Refs are a last-writer-wins map ordered by hybrid logical clocks; notes are an observed-remove set (a concurrent add is never lost). Merges are commutative, associative and idempotent, so any gossip order converges ([ADR 0008](docs/adr/0008-merkle-anti-entropy-and-crdt-state.md)).
+- **Integrity end to end.** Every object is re-verified against its content id when read or received. A corrupted remote object stops the pull and is never stored.
+
 ## Why
 
 | Problem teams have with agents | What Khonsu does |
@@ -155,8 +169,9 @@ Upstream resolution: `--upstream`, else `$KHONSU_UPSTREAM`, else your existing `
 | **Torn writes**, cut at ~400 byte offsets | 0 crashes; every valid prefix recovered |
 | **Tampering** | A single flipped bit fails `verify`; a CRC-valid rewrite breaks the hash chain |
 | Workspace suite (24 checks) | gitignore semantics; secrets never captured; `cat`/`checkout` at any call; every snapshot restorable; replay verifies the workspace before every call and names drifted files; forks restore files, replay the prefix and run side effects past the fork point for real |
+| Sync suite (17 checks) | dedup across runs; push/pull over a directory and HTTP (byte-identical); fork push sends only new objects; one-comparison no-op sync; concurrent notes converge; LWW refs and tombstones; token auth; corrupted remote objects rejected |
 | CI suite (10 checks) | `diff`: live runs diverge at the right call and field; a run and its replay are identical. pytest plugin: records, then replays offline and deterministically; a prompt change fails with the divergence report; a missing recording fails with instructions |
-| Unit + model-based property tests (42) | Persistent Merkle store, log, canonical JSON, matching, snapshot trees |
+| Unit + model-based property tests (49) | Persistent Merkle store, log, canonical JSON, matching, snapshot trees, pack/unpack, Merkle summaries, CRDT semilattice laws (3 replicas × 60 random histories) |
 | **ASan + UBSan, ThreadSanitizer**, Clang 18 and GCC 13, and WebAssembly under Node | Run in CI on every push. TSan caught a real listener shutdown race ([ADR 0002](docs/adr/0002-thread-per-connection.md)) |
 
 ```bash
@@ -177,8 +192,8 @@ The recorder sits on a C++23 kernel that also compiles to WebAssembly. That kern
 | 1 | Recorder proxy + CLI: record, replay, replay-then-live, show, verify; durability and concurrency tests | ✅ done |
 | 2 | Workspace snapshots in the Merkle store (`fork run@N` restores the files too); `@khonsu.tool` Python SDK | ✅ done |
 | 3 | `khonsu diff` between runs; pytest plugin for deterministic agent tests in CI | ✅ done |
-| 4 | Sync recordings between machines with Merkle anti-entropy; CRDT annotations | next |
-| 5 | Web viewer: drop a `.khn` or OpenTelemetry GenAI trace; the Moon Dial time scrubber | |
+| 4 | Sync recordings between machines with Merkle anti-entropy; CRDT annotations | ✅ done |
+| 5 | Web viewer: drop a `.khn` or OpenTelemetry GenAI trace; the Moon Dial time scrubber | next |
 | 6 | Real-agent study on a local model; benchmarks vs vcrpy and LangGraph checkpointers | |
 | 7 | Showcase: fork a *running* sandboxed program; speculative branches; Play mode | |
 
