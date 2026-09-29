@@ -8,6 +8,7 @@ import type {
   VerifyResult,
   World,
 } from "./types";
+import type { ForkInfo, PageReport, SpecResult, VmState } from "../play/types";
 import type { CallView, FileChange, FileContent, FileEntry, RecordingView, RunDiffView } from "../viewer/types";
 
 type Pending = { resolve: (v: any) => void; reject: (e: Error) => void };
@@ -69,6 +70,17 @@ export class KernelClient {
   recChanges = (h: number, from: string, to: string) => this.call<FileChange[]>("recChanges", h, from, to);
   recDiff = (a: number, b: number) => this.call<RunDiffView>("recDiff", a, b);
   recClose = (h: number) => this.call<void>("recClose", h);
+  // Lune (Play): a forkable deterministic VM.
+  luneNew = (src: string, gas: number) => this.call<VmState | { error: string; line: number }>("luneNew", src, gas);
+  luneRun = (id: number, steps: number) => this.call<VmState>("luneRun", id, steps);
+  luneState = (id: number) => this.call<VmState>("luneState", id);
+  luneFork = (id: number) => this.call<ForkInfo>("luneFork", id);
+  luneSet = (id: number, name: string, v: number) => this.call<VmState>("luneSet", id, name, v);
+  luneSpeculate = (id: number, v: string, from: number, n: number, budget: number) =>
+    this.call<SpecResult>("luneSpeculate", id, v, from, n, budget);
+  lunePages = (id: number) => this.call<PageReport>("lunePages", id);
+  luneFree = (id: number) => this.call<void>("luneFree", id);
+  luneGc = () => this.call<{ freed: number; ms: number; store_pages: number; store_bytes: number }>("luneGc");
   importLog = (bytes: Uint8Array) => this.call<{ id: number; error: string }>("importLog", bytes);
 }
 
