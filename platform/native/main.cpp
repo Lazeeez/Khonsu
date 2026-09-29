@@ -9,10 +9,12 @@
 #include "net.hpp"
 #include "process.hpp"
 #include "proxy.hpp"
+#include "store.hpp"
 #include "workspace.hpp"
 
 #include "khonsu/json.hpp"
 #include "khonsu/recording.hpp"
+#include "khonsu/crdt.hpp"
 #include "khonsu/rundiff.hpp"
 
 #include <atomic>
@@ -65,7 +67,15 @@ int usage(int code) {
                "inspect\n"
                "  khonsu show FILE [--json]    Every call, tool and workspace change.\n"
                "  khonsu verify FILE           Frame CRCs and the hash chain.\n"
-               "  khonsu diff A B [--json]     Align two runs call by call; show where they diverge.\n"
+               "  khonsu diff A B [--json]     Align two runs call by call; show where they diverge.\n\n"
+               "share (store: --store DIR, else $KHONSU_STORE, else .khonsu/store)\n"
+               "  khonsu store add FILE... [--name NAME]    Import recordings (deduplicated objects).\n"
+               "  khonsu store ls | get NAME [-o FILE] | rm NAME\n"
+               "  khonsu store serve [--port N] [--bind ADDR] [--token T]   Share a store over HTTP.\n"
+               "  khonsu sync REMOTE [--push | --pull] [--token T]\n"
+               "      Merkle anti-entropy with a store directory or http://host:port: only differing\n"
+               "      objects move; refs and annotations merge as CRDTs (no conflicts, no coordinator).\n"
+               "  khonsu annotate NAME[@N] TEXT [--label L] · annotations [NAME] · unannotate TAG\n"
                "  khonsu version\n\n"
                "upstream: --upstream, else $KHONSU_UPSTREAM, else $OPENAI_BASE_URL, else https://api.openai.com/v1\n"
                "          (local and free: --upstream http://localhost:11434/v1 for Ollama)\n",
@@ -77,6 +87,8 @@ struct Options {
   std::string cmd;
   std::vector<std::string> positional;
   std::string out, record_to, replay_from, upstream, workspace, dir;
+  std::string store_dir, name, token, bind = "127.0.0.1", label, author;
+  bool push_only = false, pull_only = false;
   std::string on_miss = "fail";
   std::uint16_t port = 0;
   bool fsync = true, realtime = false, quiet = false, json = false, no_workspace = false, force = false;
@@ -109,6 +121,14 @@ bool parse_args(int argc, char** argv, Options& o, std::string& err) {
     else if (a == "--replay") { if (!value(o.replay_from)) return false; }
     else if (a == "-w" || a == "--workspace") { if (!value(o.workspace)) return false; }
     else if (a == "--dir") { if (!value(o.dir)) return false; }
+    else if (a == "--store") { if (!value(o.store_dir)) return false; }
+    else if (a == "--name") { if (!value(o.name)) return false; }
+    else if (a == "--token") { if (!value(o.token)) return false; }
+    else if (a == "--bind") { if (!value(o.bind)) return false; }
+    else if (a == "--label") { if (!value(o.label)) return false; }
+    else if (a == "--author") { if (!value(o.author)) return false; }
+    else if (a == "--push") o.push_only = true;
+    else if (a == "--pull") o.pull_only = true;
     else if (a == "--port") { if (!value(tmp)) return false; o.port = static_cast<std::uint16_t>(std::atoi(tmp.c_str())); }
     else if (a == "--live-from") { if (!value(tmp)) return false; o.live_from = std::strtoull(tmp.c_str(), nullptr, 10); }
     else if (a == "--no-fsync") o.fsync = false;
@@ -681,6 +701,225 @@ int cmd_diff(const Options& o) {
   return 1;
 }
 
+// ------------------------------------------------------------------------------------------
+// shared stores: store / sync / annotate
+// ------------------------------------------------------------------------------------------
+
+std::string store_dir(const Options& o) {
+  if (!o.store_dir.empty()) return o.store_dir;
+  if (const char* e = std::getenv("KHONSU_STORE"); e && *e) return e;
+  return ".khonsu/store";
+}
+
+std::string stem_of(const std::string& path) {
+  const auto slash = path.find_last_of('/');
+  std::string s = slash == std::string::npos ? path : path.substr(slash + 1);
+  if (s.size() > 4 && s.substr(s.size() - 4) == ".khn") s.resize(s.size() - 4);
+  return s;
+}
+
+std::string hlc_time(const crdt::Hlc& h) {
+  char buf[32];
+  const std::time_t t = static_cast<std::time_t>(h.ms / 1000);
+  std::strftime(buf, sizeof buf, "%Y-%m-%d %H:%M", std::localtime(&t));
+  return buf;
+}
+
+int cmd_store(const Options& o) {
+  if (o.positional.empty()) return usage(2);
+  const std::string sub = o.positional[0];
+  Store store;
+  std::string err;
+  if (!store.open(store_dir(o), &err)) {
+    std::fprintf(stderr, "khonsu: %s\n", err.c_str());
+    return 2;
+  }
+  if (sub == "add") {
+    if (o.positional.size() < 2) return usage(2);
+    for (std::size_t i = 1; i < o.positional.size(); ++i) {
+      const std::string& file = o.positional[i];
+      std::vector<std::byte> bytes;
+      if (!read_file(file, bytes, &err)) {
+        std::fprintf(stderr, "khonsu: %s\n", err.c_str());
+        return 2;
+      }
+      const std::string name = !o.name.empty() && o.positional.size() == 2 ? o.name : stem_of(file);
+      std::size_t fresh = 0;
+      if (!store.add_recording(name, bytes, &err, &fresh)) {
+        std::fprintf(stderr, "khonsu: %s: %s\n", file.c_str(), err.c_str());
+        return 2;
+      }
+      std::fprintf(stderr, "%s stored %s as %s (%s, %zu new objects)\n", green("☾ khonsu").c_str(), file.c_str(),
+                   bold(name).c_str(), human_bytes(bytes.size()).c_str(), fresh);
+    }
+    return 0;
+  }
+  if (sub == "ls") {
+    const crdt::State s = store.state();
+    if (o.json) {
+      Json j;
+      j.begin_array();
+      for (const auto& [name, r] : s.refs()) {
+        if (r.deleted) continue;
+        j.begin_object().field("name", name).field("manifest", r.manifest).field("bytes", r.size);
+        j.field("updated_ms", r.hlc.ms).field("annotations", s.annotations(name).size()).end_object();
+      }
+      j.end_array();
+      std::printf("%s\n", j.str().c_str());
+      return 0;
+    }
+    for (const auto& [name, r] : s.refs()) {
+      if (r.deleted) continue;
+      const auto n = s.annotations(name).size();
+      std::printf("  %-32s %9s  %s  %s%s\n", name.c_str(), human_bytes(r.size).c_str(), dim(hlc_time(r.hlc)).c_str(),
+                  dim(r.manifest.substr(0, 12)).c_str(), n ? gold("  " + std::to_string(n) + " notes").c_str() : "");
+    }
+    return 0;
+  }
+  if (sub == "get") {
+    if (o.positional.size() != 2) return usage(2);
+    const auto bytes = store.export_recording(o.positional[1], &err);
+    if (!bytes) {
+      std::fprintf(stderr, "khonsu: %s\n", err.c_str());
+      return 1;
+    }
+    const std::string out = o.out.empty() ? o.positional[1] + ".khn" : o.out;
+    if (::access(out.c_str(), F_OK) == 0) {  // refuse to clobber an existing file
+      std::fprintf(stderr, "khonsu: %s exists\n", out.c_str());
+      return 2;
+    }
+    std::FILE* f = std::fopen(out.c_str(), "wb");
+    if (!f || std::fwrite(bytes->data(), 1, bytes->size(), f) != bytes->size()) {
+      std::fprintf(stderr, "khonsu: cannot write %s\n", out.c_str());
+      if (f) std::fclose(f);
+      return 2;
+    }
+    std::fclose(f);
+    std::fprintf(stderr, "%s %s → %s (%s)\n", green("☾ khonsu").c_str(), o.positional[1].c_str(), out.c_str(),
+                 human_bytes(bytes->size()).c_str());
+    return 0;
+  }
+  if (sub == "rm") {
+    if (o.positional.size() != 2) return usage(2);
+    const std::string name = o.positional[1];
+    if (!store.state().ref(name)) {
+      std::fprintf(stderr, "khonsu: no recording named %s\n", name.c_str());
+      return 1;
+    }
+    return store.update_state([&](crdt::State& s, crdt::Clock& c) {
+      s.put_ref(name, crdt::Ref{"", c.now(now_unix_ms()), true, 0});  // tombstone: the delete syncs too
+    }, &err) ? 0 : 2;
+  }
+  if (sub == "serve") {
+    static std::atomic<bool> stop{false};
+    std::signal(SIGINT, [](int) { stop = true; });
+    std::signal(SIGTERM, [](int) { stop = true; });
+    const std::string token = !o.token.empty() ? o.token : (std::getenv("KHONSU_STORE_TOKEN") ? std::getenv("KHONSU_STORE_TOKEN") : "");
+    return serve_store(store, o.bind, o.port, token, stop, o.quiet);
+  }
+  return usage(2);
+}
+
+int cmd_sync(const Options& o) {
+  if (o.positional.size() != 1) return usage(2);
+  Store store;
+  std::string err;
+  if (!store.open(store_dir(o), &err)) {
+    std::fprintf(stderr, "khonsu: %s\n", err.c_str());
+    return 2;
+  }
+  const std::string token = !o.token.empty() ? o.token : (std::getenv("KHONSU_STORE_TOKEN") ? std::getenv("KHONSU_STORE_TOKEN") : "");
+  auto remote = open_remote(o.positional[0], token, &err);
+  if (!remote) {
+    std::fprintf(stderr, "khonsu: %s\n", err.c_str());
+    return 2;
+  }
+  SyncStats st;
+  const bool push = !o.pull_only, pull = !o.push_only;
+  if (!sync(store, *remote, push, pull, st, &err)) {
+    std::fprintf(stderr, "khonsu: sync failed: %s\n", err.c_str());
+    return 1;
+  }
+  if (o.json) {
+    Json j;
+    j.begin_object().field("roots_equal", st.roots_equal).field("buckets_differing", st.buckets_differing);
+    j.field("ids_listed", st.ids_listed).field("sent_objects", st.sent_objects).field("sent_bytes", st.sent_bytes);
+    j.field("received_objects", st.received_objects).field("received_bytes", st.received_bytes);
+    j.field("refs_before", st.refs_before).field("refs_after", st.refs_after);
+    j.field("annotations", st.annotations_after).field("round_trips", st.round_trips).end_object();
+    std::printf("%s\n", j.str().c_str());
+    return 0;
+  }
+  std::fprintf(stderr, "%s synced with %s: %s · sent %zu objects (%s) · received %zu (%s) · %zu recordings, %zu notes · %llu round trips\n",
+               green("☾ khonsu").c_str(), o.positional[0].c_str(),
+               st.roots_equal ? "already in sync" : (std::to_string(st.buckets_differing) + "/256 buckets differed").c_str(),
+               st.sent_objects, human_bytes(st.sent_bytes).c_str(), st.received_objects,
+               human_bytes(st.received_bytes).c_str(), st.refs_after, st.annotations_after,
+               static_cast<unsigned long long>(st.round_trips));
+  return 0;
+}
+
+int cmd_annotate(const Options& o, bool list, bool remove) {
+  Store store;
+  std::string err;
+  if (!store.open(store_dir(o), &err)) {
+    std::fprintf(stderr, "khonsu: %s\n", err.c_str());
+    return 2;
+  }
+  if (list) {
+    const std::string name = o.positional.empty() ? "" : o.positional[0];
+    const auto anns = store.state().annotations(name);
+    if (o.json) {
+      Json j;
+      j.begin_array();
+      for (const auto& [t, a] : anns) {
+        j.begin_object().field("tag", t.str()).field("recording", a.recording).field("step", a.step);
+        j.field("label", a.label).field("text", a.text).field("author", a.author).field("ms", a.hlc.ms).end_object();
+      }
+      j.end_array();
+      std::printf("%s\n", j.str().c_str());
+      return 0;
+    }
+    for (const auto& [t, a] : anns)
+      std::printf("  %s %s%s  %s%s  %s\n", dim(t.str()).c_str(), a.recording.c_str(),
+                  a.step >= 0 ? ("@" + std::to_string(a.step)).c_str() : "", a.label.empty() ? "" : gold("[" + a.label + "] ").c_str(),
+                  a.text.c_str(), dim("— " + a.author + ", " + hlc_time(a.hlc)).c_str());
+    return 0;
+  }
+  if (remove) {
+    if (o.positional.size() != 1) return usage(2);
+    const auto dot = o.positional[0].find('.');
+    if (dot == std::string::npos) return usage(2);
+    crdt::Tag t{std::strtoull(o.positional[0].substr(0, dot).c_str(), nullptr, 16),
+                std::strtoull(o.positional[0].substr(dot + 1).c_str(), nullptr, 10)};
+    bool removed = false;
+    if (!store.update_state([&](crdt::State& s, crdt::Clock&) { removed = s.remove_annotation(t); }, &err)) return 2;
+    if (!removed) std::fprintf(stderr, "khonsu: no annotation %s\n", o.positional[0].c_str());
+    return removed ? 0 : 1;
+  }
+  if (o.positional.size() < 2) return usage(2);
+  const auto [name, ref] = split_ref(o.positional[0]);
+  std::string text;
+  for (std::size_t i = 1; i < o.positional.size(); ++i) text += (i > 1 ? " " : "") + o.positional[i];
+  crdt::Annotation a;
+  a.recording = name;
+  a.step = ref.empty() ? -1 : std::strtoll(ref.c_str(), nullptr, 10);
+  a.label = o.label;
+  a.text = text;
+  a.author = !o.author.empty() ? o.author : (std::getenv("USER") ? std::getenv("USER") : "someone");
+  crdt::Tag tag;
+  if (!store.update_state([&](crdt::State& s, crdt::Clock& c) {
+        a.hlc = c.now(now_unix_ms());
+        tag = s.add_annotation(a, store.node());
+      }, &err)) {
+    std::fprintf(stderr, "khonsu: %s\n", err.c_str());
+    return 2;
+  }
+  std::fprintf(stderr, "%s noted %s%s (%s)\n", green("☾ khonsu").c_str(), name.c_str(),
+               ref.empty() ? "" : ("@" + ref).c_str(), tag.str().c_str());
+  return 0;
+}
+
 int cmd_verify(const Options& o) {
   if (o.positional.size() != 1) return usage(2);
   std::vector<std::byte> bytes;
@@ -769,5 +1008,10 @@ int main(int argc, char** argv) {
   if (o.cmd == "show") return cmd_show(o);
   if (o.cmd == "verify") return cmd_verify(o);
   if (o.cmd == "diff") return cmd_diff(o);
+  if (o.cmd == "store") return cmd_store(o);
+  if (o.cmd == "sync") return cmd_sync(o);
+  if (o.cmd == "annotate") return cmd_annotate(o, false, false);
+  if (o.cmd == "annotations") return cmd_annotate(o, true, false);
+  if (o.cmd == "unannotate") return cmd_annotate(o, false, true);
   return usage(2);
 }
