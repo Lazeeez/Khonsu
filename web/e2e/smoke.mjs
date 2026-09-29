@@ -63,23 +63,56 @@ step("simulator: fork + verify/tamper");
 await page.waitForTimeout(400);
 await shot("04-simulator");
 
+// ── play: fork a running program ──────────────────────────────────────────────────────────────
+await page.goto(base + "#/play");
+await expectText("Branch #0");
+await page.locator(".vm-out", { hasText: "32768" }).waitFor({ timeout: 30000 });
+await page.getByRole("button", { name: "⑂ Fork" }).click();
+await expectText("Branch #1");
+await expectText("forked from");
+step("play: forked the ledger while it ran");
+await page.getByRole("button", { name: "Run", exact: true }).click();  // the child; the parent keeps running
+await page.getByRole("radio", { name: "max" }).click();
+const finalOut = async (id) => {
+  await page.getByRole("option", { name: new RegExp(`^#${id}\\b`) }).click();
+  await expectText(`Branch #${id}`);
+  await page.locator(".play-inspect .chip.status-halted").waitFor({ timeout: 60000 });
+  return (await page.locator(".vm-out").innerText()).trim().split("\n").slice(-2).join(" ");
+};
+const [p0, p1] = [await finalOut(0), await finalOut(1)];
+if (p0 !== p1 || !p0.includes("richest")) errors.push(`fork diverged without an edit: "${p0}" vs "${p1}"`);
+await expectText("this branch copied");
+step("play: parent and child finish identically; page map shows sharing");
+await shot("05-play");
+await page.getByRole("combobox", { name: "Preset program" }).selectOption({ label: "Gambler" });
+await expectText("A gambler bets");
+await page.locator(".play-inspect .vm-out").waitFor();
+await page.getByRole("button", { name: "Run all" }).click();
+await expectText("futures ran in", 30000);
+step("play: speculative branches");
+await page.getByRole("textbox", { name: "Lune source" }).fill("let x = 1\nprint y\n");
+await page.getByRole("button", { name: "Compile & run" }).click();
+await expectText("unknown variable 'y'");
+step("play: compile errors point at the line");
+
 // ── benchmarks ────────────────────────────────────────────────────────────────────────────────
 await page.goto(base + "#/bench");
 await expectText("Fork latency vs state size");
+await expectText("replays identical");
 await page.getByRole("button", { name: /Quick run/ }).click();
 await expectText("live result from this browser", 60000);
 step("benchmarks run in the browser");
-await shot("05-bench");
+await shot("06-bench");
 
 // ── mobile: no horizontal overflow on the main pages ──────────────────────────────────────────
 await page.setViewportSize({ width: 390, height: 844 });
-for (const [route, marker] of [["", "Travel back"], ["#/viewer?src=coding-agent.khn", "integrity verified"]]) {
+for (const [route, marker] of [["", "Travel back"], ["#/viewer?src=coding-agent.khn", "integrity verified"], ["#/play", "Branch #0"], ["#/bench", "Against the alternatives"]]) {
   await page.goto(base + route);
   await expectText(marker);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   if (overflow > 1) errors.push(`horizontal overflow on mobile (${route || "landing"}): ${overflow}px`);
 }
-await shot("06-mobile-viewer");
+await shot("07-mobile-viewer");
 
 await browser.close();
 if (errors.length) {
