@@ -142,7 +142,7 @@ Existing tools cover pieces. Tracing SaaS (LangSmith, Langfuse, Phoenix) *shows*
 - **Secrets never touch disk.** `Authorization` and API-key headers are recorded only as `<redacted>` (tested).
 - **Tamper-evident.** Every frame has a CRC32C, and `RunEnd` commits to a hash chain over all frames, so `khonsu verify` catches bit-rot *and* rewritten history.
 - **Workspace time travel.** Before every call the working directory is captured as a content-addressed Merkle tree *inside* the recording, so a `.khn` file is self-contained. Unchanged files and subtrees are shared: on a 20,000-file repo, a later snapshot takes 34 ms and a one-file edit adds 10 KiB. `.gitignore` is honoured, and `.env`, keys and credential files are never captured ([ADR 0005](docs/adr/0005-workspace-snapshots-inside-the-recording.md)).
-- **Tools without repeated side effects.** `@khonsu.tool` (Python, standard library only) returns recorded results on replay; `replay="rerun"` re-executes workspace-writing tools and verifies them ([ADR 0006](docs/adr/0006-tool-replay-semantics.md)).
+- **Tools without repeated side effects.** `@khonsu.tool` (Python, standard library only) returns recorded results on replay. `replay="rerun"` runs workspace-writing tools again for their effect, reports a changed result, and hands the agent the recorded one, so the replay stays on the recorded path ([ADR 0006](docs/adr/0006-tool-replay-semantics.md)).
 
 ## Install and use
 
@@ -166,11 +166,25 @@ import khonsu
 @khonsu.tool                      # replay returns the recorded result; the email is not sent twice
 def send_email(to: str, body: str) -> str: ...
 
-@khonsu.tool(replay="rerun")      # workspace-writing tools run again and are verified
+@khonsu.tool(replay="rerun")      # runs again for its effect; the agent still sees the recorded result
 def write_file(path: str, content: str) -> int: ...
 ```
 
 Upstream resolution: `--upstream`, else `$KHONSU_UPSTREAM`, else your existing `$OPENAI_BASE_URL`, else `https://api.openai.com/v1`.
+
+## Results
+
+On a real function-calling coding agent (qwen2.5:3b via Ollama, 8 tasks), and against the tools teams use today. The method, per-task tables and caveats are in **[docs/RESULTS.md](docs/RESULTS.md)**.
+
+| | |
+|---|---|
+| Live re-runs of the same task that differed from the recorded run | **16 / 16**; the pass/fail outcome flipped on 5 of 8 tasks |
+| Replays identical to the recording, with the model server **stopped** | **24 / 24** |
+| Editing the last prompt: tokens served from the recording | **76 %** (only the edited call goes to the model) |
+| vs **vcrpy**: replay p50 · size · API key on disk · calls kept after `kill -9` at call 30 | 1.12 vs 3.77 ms · 186 vs 452 KiB · no vs yes · 30 vs 0 |
+| vs **LangGraph** checkpointers: 10 resumes from mid-run · storage at 40 turns | 1 vs 10 distinct outcomes · 171 KiB vs 2.1 MiB |
+
+The study also found a bug in Khonsu itself: `rerun` tools returned fresh output, and pytest's `passed in 0.03s` made 11 of 24 replays miss. The fix and a regression test are described in the [ADR 0006 amendment](docs/adr/0006-tool-replay-semantics.md).
 
 ## Correctness
 
@@ -180,10 +194,10 @@ Upstream resolution: `--upstream`, else `$KHONSU_UPSTREAM`, else your existing `
 | **kill -9**, 20 randomized trials mid-stream | Every response the agent observed survived. This test caught a real window: the OpenAI SDK finishes a stream at `[DONE]`, before the HTTP terminator, so the chunk carrying the terminal event is now held until durable ([ADR 0004](docs/adr/0004-durable-before-observable.md)) |
 | **Torn writes**, cut at ~400 byte offsets | 0 crashes; every valid prefix recovered |
 | **Tampering** | A single flipped bit fails `verify`; a CRC-valid rewrite breaks the hash chain |
-| Workspace suite (24 checks) | gitignore semantics; secrets never captured; `cat`/`checkout` at any call; every snapshot restorable; replay verifies the workspace before every call and names drifted files; forks restore files, replay the prefix and run side effects past the fork point for real |
+| Workspace suite (25 checks) | gitignore semantics; secrets never captured; `cat`/`checkout` at any call; every snapshot restorable; replay verifies the workspace before every call and names drifted files; forks restore files, replay the prefix and run side effects past the fork point for real; a `rerun` tool with a timing in its output still replays exactly |
 | Sync suite (17 checks) | dedup across runs; push/pull over a directory and HTTP (byte-identical); fork push sends only new objects; one-comparison no-op sync; concurrent notes converge; LWW refs and tombstones; token auth; corrupted remote objects rejected |
 | CI suite (10 checks) | `diff`: live runs diverge at the right call and field; a run and its replay are identical. pytest plugin: records, then replays offline and deterministically; a prompt change fails with the divergence report; a missing recording fails with instructions |
-| Unit + model-based property tests (49) | Persistent Merkle store, log, canonical JSON, matching, snapshot trees, pack/unpack, Merkle summaries, CRDT semilattice laws (3 replicas × 60 random histories) |
+| Unit + model-based property tests (57) | Persistent Merkle store, log, canonical JSON, matching, snapshot trees, pack/unpack, Merkle summaries, CRDT semilattice laws (3 replicas × 60 random histories); Lune: forking at random instructions reproduces the uninterrupted run, one write after a fork copies one page |
 | **ASan + UBSan, ThreadSanitizer**, Clang 18 and GCC 13, and WebAssembly under Node | Run in CI on every push. TSan caught a real listener shutdown race ([ADR 0002](docs/adr/0002-thread-per-connection.md)) |
 
 ```bash
@@ -194,7 +208,8 @@ python tests/integration/run_integration.py build/native/khonsu    # needs `pip 
 
 The recorder sits on a C++23 kernel that also compiles to WebAssembly. That kernel includes a persistent, content-addressed Merkle store (O(1) fork, 4 KiB copy-on-write pages, structural diff), a deterministic multi-agent runtime with verified replay, and an in-browser workbench.
 
-- **[Live workbench](https://lazeeez.github.io/Khonsu/):** scrub, fork, speculate and verify a multi-agent run entirely in your browser.
+- **[Play](https://lazeeez.github.io/Khonsu/#/play):** fork a *running* program. Lune, a small deterministic VM, keeps its whole state in the Merkle store: a fork of a committed VM takes about 3 µs whatever its size, the child copies a 4 KiB page only when it first writes it, and one click runs a dozen speculative futures ([ADR 0009](docs/adr/0009-lune-forking-running-programs.md)).
+- **[Live workbench](https://lazeeez.github.io/Khonsu/#/simulator):** scrub, fork, speculate and verify a multi-agent run entirely in your browser.
 - **[Design doc](docs/DESIGN.md)** and **[ADRs](docs/adr/)**.
 
 ## Roadmap
@@ -206,8 +221,9 @@ The recorder sits on a C++23 kernel that also compiles to WebAssembly. That kern
 | 3 | `khonsu diff` between runs; pytest plugin for deterministic agent tests in CI | ✅ done |
 | 4 | Sync recordings between machines with Merkle anti-entropy; CRDT annotations | ✅ done |
 | 5 | Web viewer: drop a `.khn` or OpenTelemetry GenAI trace; the Moon Dial time scrubber | ✅ done |
-| 6 | Real-agent study on a local model; benchmarks vs vcrpy and LangGraph checkpointers | next |
-| 7 | Showcase: fork a *running* sandboxed program; speculative branches; Play mode | |
+| 6 | Real-agent study on a local model; benchmarks vs vcrpy and LangGraph checkpointers ([results](docs/RESULTS.md)) | ✅ done |
+| 7 | Showcase: fork a *running* program (Lune VM); speculative branches; Play mode | ✅ done |
+| 8 | Launch: landing story, docs, final README | next |
 
 ## License
 
