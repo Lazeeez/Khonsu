@@ -79,6 +79,8 @@ std::string_view frame_type_name(FrameType t) noexcept {
     case FrameType::HttpRequest: return "HttpRequest";
     case FrameType::HttpResponse: return "HttpResponse";
     case FrameType::RunEnd: return "RunEnd";
+    case FrameType::Object: return "Object";
+    case FrameType::Snapshot: return "Snapshot";
   }
   return "Unknown";
 }
