@@ -223,7 +223,7 @@ The recorder sits on a C++23 kernel that also compiles to WebAssembly. That kern
 | 5 | Web viewer: drop a `.khn` or OpenTelemetry GenAI trace; the Moon Dial time scrubber | ✅ done |
 | 6 | Real-agent study on a local model; benchmarks vs vcrpy and LangGraph checkpointers ([results](docs/RESULTS.md)) | ✅ done |
 | 7 | Showcase: fork a *running* program (Lune VM); speculative branches; Play mode | ✅ done |
-| 8 | Launch: landing story, docs, final README | next |
+| 8 | Launch: landing story from the study, results docs, final README | ✅ done |
 
 ## License
 
