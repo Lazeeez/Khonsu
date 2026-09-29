@@ -3,9 +3,11 @@
 #include "http.hpp"
 
 #include "khonsu/json.hpp"
+#include "khonsu/jsonv.hpp"
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 
 namespace khonsu::native {
 
@@ -84,6 +86,12 @@ void RecordingWriter::response(const rec::Response& r, std::uint64_t t_us) {
   exchanges_.fetch_add(1);
 }
 
+void RecordingWriter::object(ws::ObjectKind kind, const Digest128& id, std::span<const std::byte> bytes) {
+  append(FrameType::Object, 2, 0, ws::encode_object(kind, id, bytes), false);
+}
+
+void RecordingWriter::snapshot(const ws::Snapshot& s) { append(FrameType::Snapshot, 2, 0, ws::encode(s), false); }
+
 void RecordingWriter::run_end(rec::RunEnd end, std::uint64_t t_us) {
   std::lock_guard lock(mu_);
   end.chain = chain_;
@@ -98,7 +106,7 @@ void RecordingWriter::run_end(rec::RunEnd end, std::uint64_t t_us) {
 // =========================================================================================
 
 Proxy::Proxy(ProxyConfig cfg) : cfg_(std::move(cfg)), t0_(std::chrono::steady_clock::now()) {
-  if (cfg_.replay) index_ = std::make_unique<rec::ReplayIndex>(*cfg_.replay);
+  if (cfg_.replay) index_ = std::make_unique<rec::ReplayIndex>(*cfg_.replay, cfg_.live_from);
 }
 
 Proxy::~Proxy() { stop(); }
@@ -132,6 +140,24 @@ void Proxy::stop() {
   idle_.wait(lock, [this] { return active_ == 0; });
 }
 
+std::string Proxy::status_json() const {
+  Json j;
+  j.begin_object().field("mode", cfg_.mode == Mode::Record ? "record" : "replay");
+  j.field("requests", stats_.requests.load()).field("replayed", stats_.replayed.load());
+  j.field("live", stats_.live.load()).field("recorded", stats_.recorded.load());
+  j.field("tools_replayed", stats_.tools_replayed.load()).field("tools_executed", stats_.tools_executed.load());
+  j.field("errors", stats_.errors.load());
+  j.field("workspace_mismatches", cfg_.workspace ? cfg_.workspace->divergences() : 0);
+  j.key("divergences").begin_array();
+  for (const auto& d : divergences()) {
+    j.begin_object().field("seq", d.seq).field("path", d.path).field("expected_seq", d.miss.expected_seq);
+    j.field("field", d.miss.field_path).field("expected", d.miss.expected_value).field("actual", d.miss.actual_value);
+    j.end_object();
+  }
+  j.end_array().end_object();
+  return j.take();
+}
+
 std::vector<Divergence> Proxy::divergences() const {
   std::lock_guard lock(mu_);
   return divergences_;
@@ -163,6 +189,17 @@ void Proxy::handle(std::unique_ptr<Stream> s) {
   in.t_us = elapsed_us();
   stats_.requests.fetch_add(1);
 
+  if (in.http.target == "/khonsu/v1/status") {  // for test harnesses (pytest plugin) and tooling
+    const std::string body = status_json();
+    ResponseWriter w(*s);
+    (void)(w.head(200, "application/json", {}, false, body.size()) && w.chunk(body) && w.finish());
+    return;
+  }
+  constexpr std::string_view kToolPrefix = "/khonsu/v1/tool/";
+  if (in.http.target.rfind(kToolPrefix, 0) == 0) {
+    handle_tool(*s, in, std::string_view(in.http.target).substr(kToolPrefix.size()));
+    return;
+  }
   if (in.http.target.rfind(cfg_.route, 0) != 0) {
     write_json_error(*s, 404, "khonsu_no_route",
                      "khonsu proxies " + cfg_.route + "/*; got " + in.http.method + " " + in.http.target);
@@ -170,58 +207,161 @@ void Proxy::handle(std::unique_ptr<Stream> s) {
   }
 
   // Identify the request: match key over the canonical body, plus its occurrence number.
+  identify(in, in.http.method, in.http.target, rec::canonical_body(in.http.body));
+  in.rec.headers_json = recorded_headers(in.http.headers);
+
+  bool refused = false, after_miss = false;
+  const rec::Exchange* ex = match(*s, in, refused, after_miss);
+  if (refused) return;
+  if (ex) {
+    stats_.replayed.fetch_add(1);
+    serve_recorded(*s, *ex);
+    record_copy(in, *ex);
+    return;
+  }
+  forward_live(*s, in, after_miss);
+}
+
+void Proxy::identify(Incoming& in, std::string method, std::string path, std::string canonical) {
   rec::Request& r = in.rec;
   r.seq = seq_.fetch_add(1);
   r.t_us = in.t_us;
-  r.method = in.http.method;
-  r.path = in.http.target;
-  r.body = rec::canonical_body(in.http.body);
+  r.method = std::move(method);
+  r.path = std::move(path);
+  r.body = std::move(canonical);
   r.key = rec::match_key(r.method, r.path, r.body);
-  r.headers_json = recorded_headers(in.http.headers);
-  {
-    std::lock_guard lock(mu_);
-    r.occurrence = occurrences_[r.key]++;
+  std::lock_guard lock(mu_);
+  r.occurrence = occurrences_[r.key]++;
+}
+
+void Proxy::record_copy(const Incoming& in, const rec::Exchange& ex) {
+  if (!cfg_.writer) return;  // a replay can itself be recorded (e.g. as the prefix of a fork)
+  rec::Response copy = *ex.resp;
+  copy.seq = in.rec.seq;
+  copy.from_recording = true;
+  cfg_.writer->request(in.rec, in.t_us);
+  cfg_.writer->response(copy, elapsed_us());
+}
+
+const rec::Exchange* Proxy::match(Stream& client, Incoming& in, bool& refused, bool& after_miss) {
+  const rec::Request& r = in.rec;
+  refused = after_miss = false;
+  if (cfg_.mode != Mode::Replay) {
+    if (cfg_.workspace) cfg_.workspace->before_request(r.seq, nullptr);
+    return nullptr;
+  }
+  rec::ReplayIndex::Miss miss;
+  if (const rec::Exchange* ex = index_->take(r.key, r.body, &miss)) {
+    const std::uint64_t rs = ex->req.seq;
+    if (cfg_.workspace) cfg_.workspace->before_request(r.seq, &rs);
+    return ex;
+  }
+  if (cfg_.workspace) cfg_.workspace->before_request(r.seq, nullptr);
+
+  // In a fork, requests past the fork point go live by design; that is not a divergence.
+  if (cfg_.live_from != UINT64_MAX && (miss.exhausted || index_->excluded(r.key))) {
+    stats_.forked.fetch_add(1);
+    return nullptr;
   }
 
-  bool after_miss = false;
-  if (cfg_.mode == Mode::Replay) {
-    rec::ReplayIndex::Miss miss;
-    if (const rec::Exchange* ex = index_->take(r.key, r.body, &miss)) {
-      stats_.replayed.fetch_add(1);
-      serve_recorded(*s, *ex);
-      if (cfg_.writer) {  // a replay can itself be recorded (e.g. as the base of a fork)
-        rec::Response copy = *ex->resp;
-        copy.seq = r.seq;
-        copy.from_recording = true;
-        cfg_.writer->request(r, in.t_us);
-        cfg_.writer->response(copy, elapsed_us());
-      }
+  stats_.divergences.fetch_add(1);
+  {
+    std::lock_guard lock(mu_);
+    divergences_.push_back({r.seq, r.path, miss});
+  }
+  std::string msg = "divergence at request #" + std::to_string(r.seq) + " (" + r.method + " " + r.path + ")";
+  if (!miss.field_path.empty()) {
+    msg += ": recording expected request #" + std::to_string(miss.expected_seq) + ", first difference at `" +
+           miss.field_path + "`";
+  }
+  log("\033[33m" + msg + "\033[0m");
+  if (!miss.field_path.empty() && !miss.expected_value.empty()) {
+    log("  recorded: " + miss.expected_value);
+    log("  now:      " + miss.actual_value);
+  }
+  // Tools can always fall back to executing locally; model calls need an upstream.
+  const bool is_tool = r.path == rec::kToolPath;
+  if (cfg_.on_miss == OnMiss::Fail || (!cfg_.upstream && !is_tool)) {
+    write_json_error(client, 409, "khonsu_divergence",
+                     msg + (cfg_.on_miss == OnMiss::Live ? " (no upstream configured for live fallback)"
+                                                         : " (rerun with --on-miss live to continue against the model)"));
+    refused = true;
+    return nullptr;
+  }
+  after_miss = true;
+  return nullptr;
+}
+
+// @khonsu.tool protocol (see sdk/python/khonsu):
+//   POST /khonsu/v1/tool/begin {"name","args"}  -> {"action":"replay","outcome":{...}}
+//                                                 | {"action":"execute","token":N}
+//                                                 | 409 divergence
+//   POST /khonsu/v1/tool/end   {"token":N,"outcome":{"ok":true,"result":...}|{"ok":false,"error":{...}}}
+void Proxy::handle_tool(Stream& client, Incoming& in, std::string_view action) {
+  auto reply = [&](const std::string& body) {
+    ResponseWriter w(client);
+    (void)(w.head(200, "application/json", {}, false, body.size()) && w.chunk(body) && w.finish());
+  };
+  const auto body = jsonv::parse(in.http.body);
+  if (!body || body->kind() != jsonv::Kind::Object) {
+    write_json_error(client, 400, "khonsu_bad_tool_call", "tool calls must be JSON objects");
+    return;
+  }
+
+  if (action == "begin") {
+    if (body->str("name").empty()) {
+      write_json_error(client, 400, "khonsu_bad_tool_call", "missing tool name");
       return;
     }
-    stats_.divergences.fetch_add(1);
+    identify(in, "POST", std::string(rec::kToolPath), jsonv::canonical(*body));
+    in.rec.headers_json = "{}";
+    bool refused = false, after_miss = false;
+    const rec::Exchange* ex = match(client, in, refused, after_miss);
+    if (refused) return;
+    if (ex) {
+      stats_.tools_replayed.fetch_add(1);
+      reply("{\"action\":\"replay\",\"outcome\":" + ex->resp->body + "}");
+      record_copy(in, *ex);
+      return;
+    }
+    const std::uint64_t token = in.rec.seq;
+    if (cfg_.writer) cfg_.writer->request(in.rec, in.t_us);
     {
       std::lock_guard lock(mu_);
-      divergences_.push_back({r.seq, r.path, miss});
+      pending_tools_[token] = std::make_unique<Incoming>(std::move(in));
     }
-    std::string msg = "divergence at request #" + std::to_string(r.seq) + " (" + r.method + " " + r.path + ")";
-    if (!miss.field_path.empty()) {
-      msg += ": recording expected request #" + std::to_string(miss.expected_seq) + ", first difference at `" +
-             miss.field_path + "`";
+    reply("{\"action\":\"execute\",\"token\":" + std::to_string(token) + "}");
+    return;
+  }
+
+  if (action == "end") {
+    const auto* tok = body->get("token");
+    const auto* outcome = body->get("outcome");
+    std::unique_ptr<Incoming> begun;
+    if (tok && tok->kind() == jsonv::Kind::Number) {
+      std::lock_guard lock(mu_);
+      const auto it = pending_tools_.find(std::strtoull(tok->as_string().c_str(), nullptr, 10));
+      if (it != pending_tools_.end()) {
+        begun = std::move(it->second);
+        pending_tools_.erase(it);
+      }
     }
-    log("\033[33m" + msg + "\033[0m");
-    if (!miss.field_path.empty() && !miss.expected_value.empty()) {
-      log("  recorded: " + miss.expected_value);
-      log("  now:      " + miss.actual_value);
-    }
-    if (cfg_.on_miss == OnMiss::Fail || !cfg_.upstream) {
-      write_json_error(*s, 409, "khonsu_divergence",
-                       msg + (cfg_.on_miss == OnMiss::Live ? " (no upstream configured for live fallback)"
-                                                           : " (rerun with --on-miss live to continue against the model)"));
+    if (!begun || !outcome) {
+      write_json_error(client, 400, "khonsu_bad_tool_call", "unknown token or missing outcome");
       return;
     }
-    after_miss = true;
+    rec::Response resp;
+    resp.seq = begun->rec.seq;
+    resp.status = 200;
+    resp.content_type = "application/json";
+    resp.body = jsonv::canonical(*outcome);
+    resp.latency_us = elapsed_us() - begun->t_us;
+    if (cfg_.writer) cfg_.writer->response(resp, elapsed_us());  // durable before the tool returns
+    stats_.tools_executed.fetch_add(1);
+    reply("{\"ok\":true}");
+    return;
   }
-  forward_live(*s, in, after_miss);
+  write_json_error(client, 404, "khonsu_no_route", "unknown tool action");
 }
 
 void Proxy::serve_recorded(Stream& client, const rec::Exchange& ex) {
@@ -301,8 +441,12 @@ void Proxy::forward_live(Stream& client, const Incoming& in, bool after_miss) {
   BodyReader body(ur, head.headers, head.status == 204 || head.status == 304);
   ResponseWriter w(client);
   // Durability contract: the response frame is fsync'd *before* the agent can
-  // observe a complete response (before the body for buffered responses, before
-  // the terminating chunk for streams). So if the agent saw it, it's recorded.
+  // observe a complete response, so if the agent saw it, it's recorded.
+  //  - buffered responses: before the body is sent;
+  //  - streams: before the *terminal event* is sent. SDKs finish a stream on
+  //    `data: [DONE]` (OpenAI) / `message_stop` (Anthropic), not on the HTTP
+  //    terminating chunk, so the chunk carrying it is held back until durable.
+  //    Every other chunk is forwarded immediately (no added token latency).
   auto commit = [&] {
     resp.latency_us = elapsed_us() - in.t_us;
     if (body.error()) {
@@ -325,15 +469,19 @@ void Proxy::forward_live(Stream& client, const Incoming& in, bool after_miss) {
   } else {
     bool client_ok = w.head(head.status, resp.content_type, extra, true);
     const auto t_req = in.t_us;
-    std::string piece;
+    std::string piece, held;
     for (;;) {
       piece.clear();
       if (!body.next(piece)) break;
       resp.body += piece;
       resp.chunks.push_back({static_cast<std::uint32_t>(resp.body.size()), elapsed_us() - t_req});
-      if (client_ok) client_ok = w.chunk(piece);  // keep draining upstream even if the client left
+      const bool terminal = resp.streamed && (!held.empty() || piece.find("[DONE]") != std::string::npos ||
+                                              piece.find("message_stop") != std::string::npos);
+      if (terminal) held += piece;                        // released only after the commit below
+      else if (client_ok) client_ok = w.chunk(piece);     // keep draining upstream even if the client left
     }
     commit();
+    if (client_ok && !held.empty()) client_ok = w.chunk(held);
     if (client_ok) w.finish();
   }
 }
