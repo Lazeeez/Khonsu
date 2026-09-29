@@ -1,86 +1,105 @@
 # ☾ Khonsu
 
-**A deterministic, forkable runtime for multi-agent LLM systems.** C++23 kernel compiled to WebAssembly, with an interactive workbench that runs entirely in your browser.
+**A time-travel debugger for AI agents.** Record any agent run once, then replay it bit-exactly, with zero tokens and zero network, as many times as you like. Change a prompt and pay only for what changed. When a replay drifts, Khonsu tells you the exact field that differs.
 
-Agent-world state (files, agent memory, *and the scheduler's queue*) is one immutable, content-addressed Merkle tree. Every source of nondeterminism (LLM output, tool I/O, wall-clock time) enters through a single recorded door, the **Oracle**. Everything else follows from those two decisions:
+Named after the Egyptian moon god whose name means *traveller*: Khonsu takes you back to the moment before things went wrong.
 
-| | How | Cost (measured, wasm32) |
-|---|---|---|
-| **fork()** at any step | copy one 4-byte root handle | **~1 ns** store-level · **~0.7 µs** full kernel fork |
-| **seek** to any step | every committed step keeps its root | O(1) |
-| **Copy-on-write** | path-copying HAMT; 4 KiB pages shared until written | ~1–2 µs first write per page |
-| **Bit-exact replay** | re-run reducers against recorded oracle responses | ~6–40 µs / step, digest-checked |
-| **Divergence detection** | Merkle digest compare at every commit + hash chain over frame CRCs | first bad step + key-level diff |
-| **Replay-then-live** | oracle cache keyed by request hash: unchanged prompts are free | tokens saved shown live |
-| **Speculative search** | fork N sampled branches, run, score, prune; GC reclaims losers | O(N) forks |
+```console
+$ khonsu record -- python agent.py                     # any framework: it's just OPENAI_BASE_URL
+☾ khonsu recording to .khonsu/runs/run-20260929-213002.khn  upstream http://localhost:11434/v1
+step1 tool_call get_weather(Memphis)
+step2 answer Based on the tool result (Memphis: 27°C, clear skies), the answer is falcon-5828.
+☾ khonsu recorded 2 exchanges → .khonsu/runs/run-20260929-213002.khn (6.5 KiB, fsync'd) · agent exit 0
 
-At 64 MiB of state, fork is **~110,000× faster than the v1 `shared_ptr`-per-page design** and **~6,000,000× faster than a deep copy** (see the **Benchmarks** tab of the workbench, or run `node build/wasm/khonsu_bench.js`).
+$ khonsu replay .khonsu/runs/run-20260929-213002.khn -- python agent.py     # model offline? doesn't matter
+☾ khonsu replayed 2/2 from recording · 0 live · 0 divergences · agent exit 0
 
-## The demo
+$ khonsu replay run.khn -- python agent.py              # after a tool started returning something new
+[khonsu] divergence at request #1 (POST /v1/chat/completions): recording expected request #1,
+         first difference at `messages[3].content`
+[khonsu]   recorded: Memphis: 27°C, clear skies
+[khonsu]   now:      Memphis: 27°C, clear skies (stale)
 
-The workbench replays a recorded "incident": a planner, researcher, coder, tester and reviewer try to fix issue #42 in a small TypeScript repo. The planner skips the docs and the coder **hallucinates `api.getUserById()`** three times. The guided tour then walks through:
-
-1. **Replay** the recorded run step by step. The multiverse, CoW page map and causal trace all scrub together.
-2. **Root cause**: jump to the hallucinated call and read the recorded LLM request and response frames.
-3. **Fork & fix**: fork at genesis and inject the real API into the coder's memory. The planner's unchanged prompt **replays from the recording** and only the coder goes live. The generated client file shares 11 of 12 pages with the original.
-4. **Speculate ×8**: eight differently-sampled branches; the evaluator (the sandboxed test suite) keeps the best.
-5. **Trust, but verify**: replay from the log alone, then tamper with a recorded response *and fix its CRC*. The verifier still pinpoints the step.
-6. **Chaos**: kill the coder mid-run. The supervisor restarts it from committed state, and the run still verifies.
-
-> The LLM in the offline demo is a **simulated model** (`khonsu-sim-1`) whose sampling draws on host entropy, exactly the kind of nondeterminism the Oracle has to record. Real backends (WebLLM / BYOK APIs) plug in behind the same `LanguageModel` interface; see the roadmap.
-
-## Architecture in one diagram
-
-```text
- user edit / chaos ─► Deterministic scheduler ──► Agent reducer (pure: state, event → state′, effects)
-                       (queue lives IN the state)            │ effects
-                              │ commit root_k                ▼
-                              ▼                        ORACLE (record │ replay │ cache)
-                  Persistent Merkle state tree ◄──────────────┘
-                  32-way HAMT · 4 KiB CoW pages · lazy XXH3-128 digests · canonical form
-                              │
-                              ▼
-                  Event log: 32 B frames · CRC32C · StepCommit(digest, hash chain) · .khn export
+$ khonsu replay run.khn --on-miss live -o fork.khn -- python agent.py     # replay-then-live
+☾ khonsu replayed 7/8 from recording · 1 live · 1 divergence → fork.khn
 ```
 
-The full rationale, including the review of the original proposal, trade-offs, prior art and the roadmap, is in **[docs/DESIGN.md](docs/DESIGN.md)**.
+## Why
 
-## Repository layout
+| Problem teams have with agents | What Khonsu does |
+|---|---|
+| **Failures can't be reproduced.** The model samples differently on every run, so the bug disappears. | `record` captures every model exchange durably (even if the process is `kill -9`'d). `replay` reproduces the run byte-for-byte. |
+| **Agent tests are flaky and expensive.** Every CI run re-calls the model. | Commit a recording and replay it in CI: deterministic, offline, free. A behaviour change fails loudly with a field-level diff. |
+| **Prompt iteration burns tokens.** Editing step 15 re-pays for steps 1–14. | `--on-miss live`: unchanged requests come from the recording; only changed ones go to the model. The result is recorded as a fork of the original. |
+
+Existing tools cover pieces. Tracing SaaS (LangSmith, Langfuse, Phoenix) *shows* runs but can't *re-execute* them. HTTP cassettes (vcrpy) break on any prompt change. Framework checkpointers (LangGraph) are framework-locked and don't capture the workspace. Khonsu works with any language or framework, runs locally and is free.
+
+## How it works
 
 ```text
-kernel/          portable C++23 core: store (HAMT + CoW files + Merkle), log, kernel, model, bench
-platform/web/    flat C ABI for the WebAssembly module (JSON on cold paths, exception-safe)
-web/             Vite + React + TypeScript workbench; kernel runs in a Web Worker; canvas renderers
-tests/           unit + model-based property tests (dependency-free harness)
-bench/           benchmark CLI (same suite as the in-browser /bench page)
-third_party/     xxHash (BSD-2)
+ your agent ──OPENAI_BASE_URL──►  khonsu proxy (127.0.0.1) ──TLS──► model API (OpenAI, Ollama, vLLM, …)
+                                    │   canonical JSON → match key = H(method, path, body) + occurrence
+                                    ▼
+                         recording.khn  ── append-only, CRC32C-framed, fsync'd, hash-chained
+                                    │
+                replay: serve by (key, occurrence) · miss ⇒ divergence at the first differing JSON field
 ```
 
-## Build
+- **Framework-agnostic by construction.** Recording happens at the HTTP boundary ([ADR 0001](docs/adr/0001-record-at-the-http-boundary.md)).
+- **Exact, order-independent matching.** Requests are matched by a hash of their canonical JSON (numbers kept as original lexemes, so `0.10` is never rewritten as `0.1`) plus an occurrence count, so parallel requests replay correctly regardless of arrival order ([ADR 0003](docs/adr/0003-canonical-json-and-match-keys.md)).
+- **Durable before observable.** A response is `fdatasync`'d before the agent can see it complete, so *if the agent saw it, it's in the recording*. Verified by kill -9 trials and torn-write tests ([ADR 0004](docs/adr/0004-durable-before-observable.md)).
+- **Streaming-faithful.** SSE token streams are recorded with chunk boundaries and timing, and replayed instantly or in real time (`--realtime`).
+- **Secrets never touch disk.** `Authorization` and API-key headers are recorded only as `<redacted>` (tested).
+- **Tamper-evident.** Every frame has a CRC32C, and `RunEnd` commits to a hash chain over all frames, so `khonsu verify` catches bit-rot *and* rewritten history.
 
-**WebAssembly (primary target).** Requires [emsdk](https://emscripten.org), CMake ≥ 3.24 and Ninja.
+## Install and use
+
+Linux (macOS and Windows via WSL are planned). Needs CMake ≥ 3.24, Clang ≥ 17 or GCC ≥ 13, Ninja, OpenSSL.
 
 ```bash
-cmake --preset wasm && cmake --build --preset wasm   # also copies khonsu.{mjs,wasm} into web/public/wasm
-ctest --preset wasm                                  # tests run under Node
-node build/wasm/khonsu_bench.js                      # benchmarks (JSON)
-
-cd web && npm ci && npm run dev                      # http://localhost:5173/Khonsu/
-npm run build && npx vite preview --port 4173 &
-node e2e/smoke.mjs http://localhost:4173/Khonsu/     # headless E2E of the whole tour
+cmake --preset native && cmake --build --preset native
+./build/native/khonsu record -o run.khn --upstream http://localhost:11434/v1 -- python agent.py   # Ollama: free, local
+./build/native/khonsu show run.khn            # every call: model, prompt, output, tools, tokens, latency
+./build/native/khonsu verify run.khn          # CRCs + hash chain
+./build/native/khonsu replay run.khn -- python agent.py
+./build/native/khonsu serve --replay run.khn  # long-running proxy; prints the OPENAI_BASE_URL to use
 ```
 
-**Native** (Linux/macOS, clang or gcc): `cmake --preset native && cmake --build --preset native && ctest --preset native`. The `native-asan` preset builds with ASan and UBSan.
-
-**Deploy.** `.github/workflows/pages.yml` builds native and wasm, runs the tests, sanitizers and a Playwright E2E, then publishes `web/dist` to GitHub Pages. Enable Pages with source "GitHub Actions" in the repo settings.
+Upstream resolution: `--upstream`, else `$KHONSU_UPSTREAM`, else your existing `$OPENAI_BASE_URL`, else `https://api.openai.com/v1`.
 
 ## Correctness
 
-- **Model-based property tests**: 4,000 random put/erase/file ops against a `std::map` model, with *every historical root* re-checked afterwards (persistence).
-- **Canonical structure**: equal key sets give equal Merkle roots regardless of edit history, which is what makes "same colour = same world" in the UI true.
-- **Determinism across entropy**: 40 different host-entropy seeds; every run verifies, and imported logs replay bit-exactly in a kernel with *different* entropy.
-- **Adversarial**: bit-rot is caught by CRC32C; a CRC-fixed tamper is caught by the replay digest and the hash chain.
-- **A real war story**: `verify()` diverged only at `-O2`, and only on the *second* call. The cause was xxHash's streaming `reset_withSeed` on a stack-emplaced state: it skips deriving the secret when the uninitialized `seed` field happens to match, so hashes depended on stale stack bytes. Replay verification turned a silent heisenbug into a reproducible failure (fixed in `kernel/src/common.cpp`).
+| Suite | What it proves |
+|---|---|
+| Integration, with the unmodified **official `openai` Python SDK** against a deliberately **non-deterministic** mock model (random text, tool arguments, chunking, latency) | Live runs differ; replays are byte-identical 3/3 with the model **offline**; 6 concurrent requests replay correctly; the API key is never on disk; divergence is pinpointed to `messages[3].content`; replay-then-live serves 7 of 8 calls from the recording |
+| **kill -9**, 12 randomized trials mid-stream | Every response the agent observed survived |
+| **Torn writes**, cut at ~400 byte offsets | 0 crashes; every valid prefix recovered |
+| **Tampering** | A single flipped bit fails `verify`; a CRC-valid rewrite breaks the hash chain |
+| Unit + model-based property tests (37) | Persistent Merkle store, log, canonical JSON, matching |
+| **ASan + UBSan, ThreadSanitizer**, Clang 18 and GCC 13, and WebAssembly under Node | Run in CI on every push. TSan caught a real listener shutdown race ([ADR 0002](docs/adr/0002-thread-per-connection.md)) |
+
+```bash
+python tests/integration/run_integration.py build/native/khonsu    # needs `pip install openai`
+```
+
+## The engine underneath
+
+The recorder sits on a C++23 kernel that also compiles to WebAssembly. That kernel includes a persistent, content-addressed Merkle store (O(1) fork, 4 KiB copy-on-write pages, structural diff), a deterministic multi-agent runtime with verified replay, and an in-browser workbench.
+
+- **[Live workbench](https://lazeeez.github.io/Khonsu/):** scrub, fork, speculate and verify a multi-agent run entirely in your browser.
+- **[Design doc](docs/DESIGN.md)** and **[ADRs](docs/adr/)**.
+
+## Roadmap
+
+| | Milestone | State |
+|---|---|---|
+| 1 | Recorder proxy + CLI: record, replay, replay-then-live, show, verify; durability and concurrency tests | ✅ done |
+| 2 | Workspace snapshots in the Merkle store (`fork run@N` restores the files too); `@khonsu.tool` Python SDK | next |
+| 3 | `khonsu diff` between runs; pytest plugin for deterministic agent tests in CI | |
+| 4 | Sync recordings between machines with Merkle anti-entropy; CRDT annotations | |
+| 5 | Web viewer: drop a `.khn` or OpenTelemetry GenAI trace; the Moon Dial time scrubber | |
+| 6 | Real-agent study on a local model; benchmarks vs vcrpy and LangGraph checkpointers | |
+| 7 | Showcase: fork a *running* sandboxed program; speculative branches; Play mode | |
 
 ## License
 
