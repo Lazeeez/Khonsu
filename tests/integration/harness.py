@@ -1,5 +1,6 @@
 """Shared helpers for the integration suites (no pytest dependency)."""
 
+import atexit
 import json
 import os
 import socket
@@ -14,6 +15,21 @@ PY = sys.executable
 
 passed = 0
 failed = 0
+_children = []  # background servers; killed on any exit so a failing suite can't hang its caller
+
+
+def spawn(*args, **kwargs):
+    p = subprocess.Popen(*args, **kwargs)
+    _children.append(p)
+    return p
+
+
+@atexit.register
+def _reap():
+    for p in _children:
+        if p.poll() is None:
+            p.kill()
+            p.wait()
 
 
 def check(name, cond, detail=""):
@@ -43,7 +59,7 @@ class Mock:
     def __init__(self, delay="0.002"):
         self.port = free_port()
         env = {**os.environ, "MOCK_DELAY": delay}
-        self.p = subprocess.Popen([PY, str(HERE / "mock_llm.py"), str(self.port)], stdout=subprocess.PIPE, env=env)
+        self.p = spawn([PY, str(HERE / "mock_llm.py"), str(self.port)], stdout=subprocess.PIPE, env=env)
         assert self.p.stdout.readline().strip() == b"ready"
         self.url = f"http://127.0.0.1:{self.port}/v1"
 
