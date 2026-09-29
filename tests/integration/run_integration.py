@@ -10,65 +10,21 @@ import os
 import random
 import shutil
 import signal
-import socket
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent.parent
-KHONSU = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "build/native/khonsu").resolve()
-PY = sys.executable
+from harness import KHONSU, PY, HERE, Mock, check, finish, khonsu, show
+
 AGENT = [PY, str(HERE / "agent.py")]
 TMP = Path(tempfile.mkdtemp(prefix="khonsu-it-"))
-
-passed = failed = 0
-
-
-def check(name, cond, detail=""):
-    global passed, failed
-    if cond:
-        passed += 1
-        print(f"  ok   {name}")
-    else:
-        failed += 1
-        print(f"  FAIL {name}\n{detail}")
-
-
-def free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-class Mock:
-    def __init__(self, delay="0.002"):
-        self.port = free_port()
-        env = {**os.environ, "MOCK_DELAY": delay}
-        self.p = subprocess.Popen([PY, str(HERE / "mock_llm.py"), str(self.port)], stdout=subprocess.PIPE, env=env)
-        assert self.p.stdout.readline().strip() == b"ready"
-        self.url = f"http://127.0.0.1:{self.port}/v1"
-
-    def stop(self):
-        self.p.terminate()
-        self.p.wait()
-
-
-def khonsu(*args, env=None, timeout=60):
-    return subprocess.run([str(KHONSU), *args], capture_output=True, text=True, timeout=timeout,
-                          env={**os.environ, **(env or {})})
 
 
 def agent_direct(url, env=None):
     return subprocess.run(AGENT, capture_output=True, text=True, timeout=60,
                           env={**os.environ, "OPENAI_BASE_URL": url, "OPENAI_API_KEY": "x", **(env or {})})
-
-
-def show(path):
-    r = khonsu("show", str(path), "--json")
-    return json.loads(r.stdout) if r.returncode == 0 else None
 
 
 print(f"khonsu integration tests · {KHONSU}")
@@ -80,7 +36,7 @@ check("live runs are non-deterministic (the problem)", a.returncode == 0 and a.s
 
 # 2 ─ Record.
 run = TMP / "run.khn"
-rec = khonsu("record", "-o", str(run), "--upstream", mock.url, "-q", "--", *AGENT,
+rec = khonsu("record", "--no-workspace", "-o", str(run), "--upstream", mock.url, "-q", "--", *AGENT,
              env={"AGENT_PARALLEL": "6", "OPENAI_API_KEY": "sk-secret-123"})
 check("record: agent succeeds through the proxy", rec.returncode == 0, rec.stderr)
 info = show(run)
@@ -124,7 +80,7 @@ check("verify: a single flipped bit is detected", khonsu("verify", str(bad)).ret
 
 # 7 ─ Torn writes: cut the file at every byte offset; loading must never crash.
 small = TMP / "small.khn"
-khonsu("record", "-o", str(small), "--upstream", mock.url, "-q", "--", *AGENT)
+khonsu("record", "--no-workspace", "-o", str(small), "--upstream", mock.url, "-q", "--", *AGENT)
 full = small.read_bytes()
 crashes, loaded = 0, 0
 cut = TMP / "cut.khn"
@@ -142,9 +98,9 @@ check("torn tail: every cut past the RunStart frame still loads", loaded > 300, 
 mock.stop()
 mock = Mock(delay="0.03")
 violations = 0
-for trial in range(12):
+for trial in range(20):
     path = TMP / f"crash{trial}.khn"
-    p = subprocess.Popen([str(KHONSU), "record", "-o", str(path), "--upstream", mock.url, "-q", "--", *AGENT],
+    p = subprocess.Popen([str(KHONSU), "record", "--no-workspace", "-o", str(path), "--upstream", mock.url, "-q", "--", *AGENT],
                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
                          env={**os.environ, "AGENT_PARALLEL": "4"}, start_new_session=True)
     time.sleep(random.uniform(0.05, 1.2))
@@ -156,9 +112,8 @@ for trial in range(12):
     if info is None or complete < seen:
         violations += 1
         print(f"    trial {trial}: agent saw {seen} responses, recording has {complete}")
-check("kill -9: 12 trials, every response the agent observed survived", violations == 0, f"{violations} violations")
+check("kill -9: 20 trials, every response the agent observed survived", violations == 0, f"{violations} violations")
 
 mock.stop()
 shutil.rmtree(TMP, ignore_errors=True)
-print(f"\n{passed} passed, {failed} failed")
-sys.exit(1 if failed else 0)
+finish()
