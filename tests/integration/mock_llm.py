@@ -30,6 +30,9 @@ def completion_text(messages):
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    # Without this, keep-alive clients hit the 40 ms Nagle/delayed-ACK stall, which would make
+    # direct calls look slower than calls through Khonsu (which sets TCP_NODELAY) in benchmarks.
+    disable_nagle_algorithm = True
 
     def log_message(self, *args):  # quiet
         pass
