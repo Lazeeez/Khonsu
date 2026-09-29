@@ -32,6 +32,7 @@ add_library(khonsu_kernel STATIC
   kernel/src/crdt.cpp
   kernel/src/pack.cpp
   kernel/src/views.cpp
+  kernel/src/lune.cpp
   kernel/src/model.cpp
   kernel/src/kernel.cpp
   kernel/src/bench.cpp
@@ -42,7 +43,7 @@ target_compile_options(khonsu_kernel PRIVATE ${KHONSU_WARNINGS} ${KHONSU_DETERMI
 if(KHONSU_BUILD_TESTS)
   enable_testing()
   add_executable(khonsu_tests tests/main.cpp tests/test_store.cpp tests/test_log.cpp tests/test_kernel.cpp
-    tests/test_jsonv.cpp tests/test_recording.cpp tests/test_snapshot.cpp tests/test_sync.cpp)
+    tests/test_jsonv.cpp tests/test_recording.cpp tests/test_snapshot.cpp tests/test_sync.cpp tests/test_lune.cpp)
   target_link_libraries(khonsu_tests PRIVATE khonsu_kernel)
   target_compile_options(khonsu_tests PRIVATE ${KHONSU_TARGET_FLAGS})
   if(EMSCRIPTEN)
