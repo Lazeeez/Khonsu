@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "khonsu"
+version = "0.3.0"
+description = "Time-travel debugger for AI agents: record, replay and fork agent runs (Python SDK)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Lajat Manekar" }]
+keywords = ["agents", "llm", "replay", "debugging", "determinism", "testing"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Software Development :: Debuggers",
+  "Topic :: Software Development :: Testing",
+]
+dependencies = []  # standard library only
+
+[project.urls]
+Homepage = "https://github.com/Lazeeez/Khonsu"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.entry-points.pytest11]
+khonsu = "khonsu.pytest_plugin"
+
+[project.optional-dependencies]
+pytest = ["pytest>=7"]
