@@ -5,6 +5,7 @@ It mixes every kind of nondeterminism and side effect Khonsu has to handle:
   - the clock via a tool                          → @khonsu.tool: replayed, not re-read
   - an external side effect (a notification)      → @khonsu.tool: skipped on replay
   - workspace writes the agent reads back         → @khonsu.tool(replay="rerun")
+  - a rerun check whose report varies (timings)    → rerun, but the recorded report is returned
 """
 
 import json
@@ -35,6 +36,14 @@ def write_file(path: str, content: str) -> int:
     return len(content)
 
 
+@khonsu.tool(replay="rerun")
+def lint(path: str) -> str:
+    # a deterministic check with a nondeterministic report, like pytest's "passed in 0.03s"
+    t = time.perf_counter_ns()
+    n = len(open(path).read().splitlines())
+    return f"{path}: {n} lines ok ({time.perf_counter_ns() - t} ns, pid {os.getpid()})"
+
+
 client = OpenAI(max_retries=0)
 started = now_ns()
 task = open("task.txt").read()
@@ -42,7 +51,8 @@ answer = client.chat.completions.create(model="mock-1", messages=[{"role": "user
 write_file("out/answer.md", f"# answer\n{answer.choices[0].message.content}\n")
 write_file("out/meta.json", json.dumps({"started_ns": started}))
 review = client.chat.completions.create(
-    model="mock-1", messages=[{"role": "user", "content": "review this:\n" + open("out/answer.md").read()}])
+    model="mock-1", messages=[{"role": "user", "content": "review this:\n" + open("out/answer.md").read()
+                                        + "\nlint: " + lint("out/answer.md")}])
 write_file("out/review.md", review.choices[0].message.content + "\n")
 notify("agent finished")
 print("answer", open("out/answer.md").read().splitlines()[1])
