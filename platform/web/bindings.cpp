@@ -7,6 +7,7 @@
 #include "khonsu/bench.hpp"
 #include "khonsu/json.hpp"
 #include "khonsu/kernel.hpp"
+#include "khonsu/lune.hpp"
 #include "khonsu/recording.hpp"
 #include "khonsu/rundiff.hpp"
 #include "khonsu/views.hpp"
@@ -193,6 +194,41 @@ const char* with_rec(int h, F&& f) {
   } catch (const std::exception& e) {
     return error(e.what());
   }
+}
+}  // namespace
+
+// ---- Lune: the forkable VM of the Play page. Its own store, so the simulator's GC never sees it.
+namespace {
+NodeStore g_lune_store;
+std::vector<std::unique_ptr<lune::Vm>> g_vms;
+std::vector<int> g_vm_parent;
+
+lune::Vm* vm_at(int id) {
+  return id >= 0 && static_cast<std::size_t>(id) < g_vms.size() ? g_vms[static_cast<std::size_t>(id)].get() : nullptr;
+}
+
+int adopt(lune::Vm vm, int parent) {
+  g_vms.push_back(std::make_unique<lune::Vm>(std::move(vm)));
+  g_vm_parent.push_back(parent);
+  return static_cast<int>(g_vms.size() - 1);
+}
+
+std::string vm_state(int id, const lune::Vm& vm, std::size_t tail) {
+  Json j;
+  j.begin_object();
+  j.field("id", id).field("parent", g_vm_parent[static_cast<std::size_t>(id)]);
+  j.field("status", lune::status_name(vm.status())).field("error", vm.error());
+  j.field("steps", vm.steps()).field("gas_left", vm.gas_left()).field("line", vm.line());
+  j.field("printed", vm.printed()).field("pages_copied", vm.pages_copied()).field("dirty_pages", vm.dirty_pages());
+  j.key("output").begin_array();
+  const auto& out = vm.output();
+  for (std::size_t i = out.size() > tail ? out.size() - tail : 0; i < out.size(); ++i) j.value(out[i]);
+  j.end_array();
+  j.key("vars").begin_array();
+  for (const auto& [name, value] : vm.variables()) j.begin_array().value(name).value(value).end_array();
+  j.end_array();
+  j.end_object();
+  return j.take();
 }
 }  // namespace
 
@@ -534,4 +570,163 @@ EMSCRIPTEN_KEEPALIVE const char* kh_bench(int quick) {
   }
 }
 
+// ---- Lune (Play) ------------------------------------------------------------------------
+
+// Compiles `src` into a new VM. The VM state, or {"error":..., "line":L}.
+EMSCRIPTEN_KEEPALIVE const char* kh_lune_new(const char* src, double gas) {
+  try {
+    lune::CompileError ce;
+    auto prog = lune::compile(src, &ce);
+    if (!prog) {
+      Json j;
+      j.begin_object().field("error", ce.message).field("line", ce.line).end_object();
+      return emit(j.take());
+    }
+    const int id = adopt(lune::Vm(g_lune_store, std::move(*prog), static_cast<std::uint64_t>(gas)), -1);
+    return emit(vm_state(id, *g_vms.back(), 200));
+  } catch (const std::exception& e) {
+    return error(e.what());
+  }
+}
+
+// Runs up to `steps` instructions; returns the state (with the last 200 output lines).
+EMSCRIPTEN_KEEPALIVE const char* kh_lune_run(int id, double steps) {
+  try {
+    lune::Vm* vm = vm_at(id);
+    if (!vm) return error("no such VM");
+    vm->run(static_cast<std::uint64_t>(steps));
+    return emit(vm_state(id, *vm, 200));
+  } catch (const std::exception& e) {
+    return error(e.what());
+  }
+}
+
+EMSCRIPTEN_KEEPALIVE const char* kh_lune_state(int id) {
+  lune::Vm* vm = vm_at(id);
+  return vm ? emit(vm_state(id, *vm, 200)) : error("no such VM");
+}
+
+// fork(): commit the parent's dirty pages, then a child sharing every page. Reports the
+// first fork (which writes the dirty pages) and the amortized cost of forking an
+// already-committed VM (a single fork is below browser timer resolution).
+EMSCRIPTEN_KEEPALIVE const char* kh_lune_fork(int id) {
+  try {
+    lune::Vm* vm = vm_at(id);
+    if (!vm) return error("no such VM");
+    const std::size_t dirty = vm->dirty_pages();
+    const double t0 = emscripten_get_now();
+    lune::Vm child = vm->fork();
+    const double t1 = emscripten_get_now();
+    constexpr int kN = 200;
+    for (int i = 0; i < kN; ++i) (void)vm->fork();
+    const double t2 = emscripten_get_now();
+    const int cid = adopt(std::move(child), id);
+    Json j;
+    j.begin_object().field("id", cid).field("dirty_pages_committed", dirty);
+    j.field("fork_ms", t1 - t0).field("fork_committed_us", (t2 - t1) * 1000.0 / kN);
+    j.field("root", g_lune_store.digest(g_vms[static_cast<std::size_t>(id)]->last_root()).short_hex()).end_object();
+    return emit(j.take());
+  } catch (const std::exception& e) {
+    return error(e.what());
+  }
+}
+
+// A what-if edit: set a number variable on a VM (usually a fresh fork).
+EMSCRIPTEN_KEEPALIVE const char* kh_lune_set(int id, const char* name, double value) {
+  lune::Vm* vm = vm_at(id);
+  if (!vm) return error("no such VM");
+  if (!vm->set_var(name, static_cast<std::int64_t>(value))) return error(std::string("cannot set '") + name + "'");
+  return emit(vm_state(id, *vm, 200));
+}
+
+// Speculative branches: fork `n` children of `id`, child i with `var` = from + i, and run
+// each for up to `budget` steps. Children stay alive for inspection.
+EMSCRIPTEN_KEEPALIVE const char* kh_lune_speculate(int id, const char* var, double from, int n, double budget) {
+  try {
+    if (!vm_at(id)) return error("no such VM");
+    if (n < 1 || n > 64) return error("n must be 1..64");
+    const double t0 = emscripten_get_now();
+    Json j;
+    j.begin_object().key("branches").begin_array();
+    for (int i = 0; i < n; ++i) {
+      lune::Vm child = vm_at(id)->fork();
+      const auto value = static_cast<std::int64_t>(from) + i;
+      if (!child.set_var(var, value)) return error(std::string("cannot set '") + var + "'");
+      child.run(static_cast<std::uint64_t>(budget));
+      const int cid = adopt(std::move(child), id);
+      const lune::Vm& c = *g_vms[static_cast<std::size_t>(cid)];
+      j.begin_object().field("id", cid).field("value", value).field("status", lune::status_name(c.status()));
+      j.field("steps", c.steps()).field("pages_copied", c.pages_copied());
+      j.field("last", c.output().empty() ? std::string() : c.output().back()).end_object();
+    }
+    j.end_array().field("ms", emscripten_get_now() - t0).end_object();
+    return emit(j.take());
+  } catch (const std::exception& e) {
+    return error(e.what());
+  }
+}
+
+// Page identity of every array in `id` against its fork point: per page, 's' = the same
+// physical page (shared), 'c' = copied (written since the fork), 'n' = new (a hole at the
+// fork point, written since), '.' = never written.
+EMSCRIPTEN_KEEPALIVE const char* kh_lune_pages(int id) {
+  try {
+    lune::Vm* a = vm_at(id);
+    if (!a) return error("no such VM");
+    a->commit();
+    Json j;
+    j.begin_object().key("arrays").begin_array();
+    for (std::size_t k = 0; k < a->array_count(); ++k) {
+      const std::uint64_t npages =
+          (static_cast<std::uint64_t>(a->array_length(k)) * sizeof(std::int64_t) + kPageSize - 1) / kPageSize;
+      std::string map(static_cast<std::size_t>(npages), '.');
+      std::vector<NodeRef> base(static_cast<std::size_t>(npages));
+      for (const PageSlot& s : a->base_array_pages(k))
+        if (s.index < npages) base[static_cast<std::size_t>(s.index)] = s.page;
+      std::uint64_t shared = 0, copied = 0, fresh = 0;
+      for (const PageSlot& s : a->array_pages(k)) {
+        if (s.index >= npages) continue;
+        const NodeRef was = base[static_cast<std::size_t>(s.index)];
+        const char c = was == s.page ? 's' : was.empty() ? 'n' : 'c';
+        map[static_cast<std::size_t>(s.index)] = c;
+        ++(c == 's' ? shared : c == 'c' ? copied : fresh);
+      }
+      j.begin_object().field("length", a->array_length(k)).field("pages", npages);
+      j.field("shared", shared).field("copied", copied).field("new", fresh).field("map", map).end_object();
+    }
+    j.end_array();
+    const auto st = g_lune_store.stats();
+    j.field("store_pages", st.pages).field("store_bytes", st.bytes).end_object();
+    return emit(j.take());
+  } catch (const std::exception& e) {
+    return error(e.what());
+  }
+}
+
+EMSCRIPTEN_KEEPALIVE void kh_lune_free(int id) {
+  if (vm_at(id)) g_vms[static_cast<std::size_t>(id)].reset();
+}
+
+// Commits every live VM and frees whatever no VM can reach.
+EMSCRIPTEN_KEEPALIVE const char* kh_lune_gc() {
+  try {
+    std::vector<NodeRef> roots;
+    for (auto& vm : g_vms)
+      if (vm) {
+        roots.push_back(vm->commit());
+        roots.push_back(vm->base_root());  // the fork point stays inspectable
+      }
+    const double t0 = emscripten_get_now();
+    const std::size_t freed = g_lune_store.collect(roots);
+    const auto st = g_lune_store.stats();
+    Json j;
+    j.begin_object().field("freed", freed).field("ms", emscripten_get_now() - t0);
+    j.field("store_pages", st.pages).field("store_bytes", st.bytes).end_object();
+    return emit(j.take());
+  } catch (const std::exception& e) {
+    return error(e.what());
+  }
+}
+
 }  // extern "C"
+
