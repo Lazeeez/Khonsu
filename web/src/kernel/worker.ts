@@ -54,6 +54,21 @@ const methods: Record<string, (m: KhonsuModule, ...a: any[]) => unknown> = {
   corrupt: (m, tid: number, g: number) => m.ccall("kh_corrupt", N, [N, N], [tid, g]),
   gc: (m) => json(m, "kh_gc", [], []),
   bench: (m, quick: boolean) => json(m, "kh_bench", [N], [quick ? 1 : 0]),
+  recLoad: (m, bytes: Uint8Array) => {
+    const ptr = m._malloc(bytes.length);
+    try {
+      m.HEAPU8.set(bytes, ptr);
+      return json(m, "kh_rec_load", [N, N], [ptr, bytes.length]);
+    } finally {
+      m._free(ptr);
+    }
+  },
+  recCall: (m, h: number, i: number) => json(m, "kh_rec_call", [N, N], [h, i]),
+  recFiles: (m, h: number, root: string) => json(m, "kh_rec_files", [N, S], [h, root]),
+  recFile: (m, h: number, root: string, path: string) => json(m, "kh_rec_file", [N, S, S], [h, root, path]),
+  recChanges: (m, h: number, from: string, to: string) => json(m, "kh_rec_changes", [N, S, S], [h, from, to]),
+  recDiff: (m, a: number, b: number) => json(m, "kh_rec_diff", [N, N], [a, b]),
+  recClose: (m, h: number) => m.ccall("kh_rec_close", null, [N], [h]),
   exportLog: (m, tid: number) => {
     const ptr = m.ccall("kh_export", N, [N], [tid]) as number;
     const len = m.ccall("kh_blob_len", N, [], []) as number;
