@@ -1,0 +1,64 @@
+import type {
+  BenchResult,
+  DiffChange,
+  Frame,
+  PageInfo,
+  StateInfo,
+  Stats,
+  VerifyResult,
+  World,
+} from "./types";
+
+type Pending = { resolve: (v: any) => void; reject: (e: Error) => void };
+
+/** Typed RPC facade over the kernel Web Worker. */
+export class KernelClient {
+  private worker: Worker;
+  private seq = 0;
+  private pending = new Map<number, Pending>();
+  /** Round-trip time of the last call (worker compute only), for the HUD. */
+  lastMs = 0;
+
+  constructor() {
+    this.worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+    this.worker.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; ms?: number }>) => {
+      const p = this.pending.get(e.data.id);
+      if (!p) return;
+      this.pending.delete(e.data.id);
+      if (e.data.ms !== undefined) this.lastMs = e.data.ms;
+      if (e.data.error) p.reject(new Error(e.data.error));
+      else p.resolve(e.data.result);
+    };
+  }
+
+  private call<T>(method: string, ...args: unknown[]): Promise<T> {
+    const id = ++this.seq;
+    return new Promise<T>((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.worker.postMessage({ id, method, args });
+    });
+  }
+
+  forkCost = () => this.call<number>("forkCost");
+  init = (seed?: number) => this.call<number>("init", seed);
+  world = () => this.call<World>("world");
+  stats = () => this.call<Stats>("stats");
+  step = (tid: number, n = 1) => this.call<{ executed: number }>("step", tid, n);
+  fork = (tid: number, g: number) => this.call<{ id: number; fork_us: number }>("fork", tid, g);
+  inject = (tid: number, key: string, text: string) => this.call<object>("inject", tid, key, text);
+  kill = (tid: number, actor: number) => this.call<object>("kill", tid, actor);
+  speculate = (tid: number, g: number, n: number) => this.call<{ ranked: number[] }>("speculate", tid, g, n);
+  state = (tid: number, g: number) => this.call<StateInfo>("state", tid, g);
+  file = (tid: number, g: number, path: string) => this.call<{ text: string | null }>("file", tid, g, path);
+  pages = (tid: number, g: number, path: string, btid: number, bg: number) =>
+    this.call<{ size: number; pages: PageInfo[] }>("pages", tid, g, path, btid, bg);
+  diff = (t1: number, g1: number, t2: number, g2: number) => this.call<{ changes: DiffChange[] }>("diff", t1, g1, t2, g2);
+  frames = (tid: number, g: number) => this.call<{ frames?: Frame[]; inherited?: boolean }>("frames", tid, g);
+  verify = (tid: number) => this.call<VerifyResult>("verify", tid);
+  tamper = (tid: number, g: number) => this.call<number>("tamper", tid, g);
+  corrupt = (tid: number, g: number) => this.call<number>("corrupt", tid, g);
+  gc = () => this.call<{ freed: number; ms: number }>("gc");
+  bench = (quick: boolean) => this.call<BenchResult>("bench", quick);
+  exportLog = (tid: number) => this.call<Uint8Array<ArrayBuffer>>("exportLog", tid);
+  importLog = (bytes: Uint8Array) => this.call<{ id: number; error: string }>("importLog", bytes);
+}
