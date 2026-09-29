@@ -1,0 +1,86 @@
+name: CI & GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: Native tests (${{ matrix.preset }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [native, native-asan]
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build clang
+      - run: cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_COMPILER=clang++
+      - run: cmake --build --preset ${{ matrix.preset }}
+      - run: ctest --preset ${{ matrix.preset }}
+      - if: matrix.preset == 'native'
+        run: ./build/native/khonsu_bench --quick
+
+  web:
+    name: WebAssembly build, tests & E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - run: cmake --preset wasm
+      - run: cmake --build --preset wasm
+      - run: ctest --preset wasm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+        env:
+          KHONSU_BASE: /${{ github.event.repository.name }}/
+          VITE_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+      - name: E2E (Playwright, headless Chromium)
+        working-directory: web
+        run: |
+          npx playwright install --with-deps chromium
+          npx vite preview --port 4173 --strictPort &
+          for i in $(seq 30); do curl -sf http://localhost:4173/${{ github.event.repository.name }}/ >/dev/null && break; sleep 1; done
+          node e2e/smoke.mjs http://localhost:4173/${{ github.event.repository.name }}/ e2e-shots
+        env:
+          KHONSU_BASE: /${{ github.event.repository.name }}/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: web/e2e-shots
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [native, web]
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
