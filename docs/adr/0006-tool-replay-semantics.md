@@ -21,8 +21,9 @@ replay each tool call has two possible behaviours, and each is wrong for some to
 
 - **Default, `replay="skip"`:** the recorded result (or exception) is returned and the function
   is not called.
-- **`replay="rerun"`:** the function runs again, and a result that differs from the recording
-  is reported. Khonsu's workspace snapshots independently verify the files it produced.
+- **`replay="rerun"`:** the function runs again for its effect, a result (or exception) that
+  differs from the recording is reported, and the agent receives the **recorded** result.
+  Khonsu's workspace snapshots independently verify the files it produced.
 - Arguments and results are canonical JSON, and they are matched exactly like model requests
   (ADR 0003): a call with different arguments is a divergence, or goes live under
   `--on-miss live` / `fork`.
@@ -37,6 +38,16 @@ replay each tool call has two possible behaviours, and each is wrong for some to
   workspace mismatch naming the files.
 - Tools that aren't decorated still run live on replay. If they make a run diverge, the model
   request or workspace check pinpoints where.
+
+## Amendment (2026-09-30): `rerun` returns the recorded result
+
+The first version returned the fresh result. The real-model study (`study/`) showed why that
+is wrong: a `run_tests` tool re-ran pytest, whose output ends in `2 passed in 0.03s`. The
+timing differed, the next model request therefore differed from the recording, and a third of
+the replays stopped at a miss. A replay's contract is *the same run*: the effect is reproduced
+(the file is written again, the workspace is verified), but what the agent sees is what it saw.
+The divergence is still printed, so a tool that is not deterministic in the way that matters
+is visible. A fork past its fork point is unaffected: those calls are live, not replays.
 
 ## Evidence
 
