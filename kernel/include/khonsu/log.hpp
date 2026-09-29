@@ -29,6 +29,11 @@ enum class FrameType : std::uint8_t {
   Fork = 6,
   UserEdit = 7,
   Fault = 8,
+  // Recordings of real agent runs (khonsu record / replay).
+  RunStart = 32,
+  HttpRequest = 33,
+  HttpResponse = 34,
+  RunEnd = 35,
 };
 
 [[nodiscard]] std::string_view frame_type_name(FrameType t) noexcept;
@@ -67,6 +72,14 @@ public:
   std::uint64_t append(FrameType type, std::uint16_t actor, std::uint64_t vtime_us, std::string_view payload) {
     return append(type, actor, vtime_us, as_bytes(payload));
   }
+
+  // Encodes one complete frame (header + padded payload) exactly as append() stores it,
+  // for writers that stream frames to a file instead of memory.
+  [[nodiscard]] static std::vector<std::byte> encode_frame(std::uint64_t lsn, FrameType type, std::uint16_t actor,
+                                                           std::uint64_t vtime_us, std::span<const std::byte> payload,
+                                                           std::uint8_t flags = 0);
+  // The 16-byte file header that precedes frames in a serialized log.
+  [[nodiscard]] static std::vector<std::byte> file_header();
 
   [[nodiscard]] std::uint64_t size() const noexcept { return index_.size(); }
   [[nodiscard]] std::uint64_t bytes() const noexcept { return data_.size(); }
