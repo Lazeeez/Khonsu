@@ -1,0 +1,22 @@
+[
+  {
+    "file": "coding-agent.khn",
+    "title": "Coding agent",
+    "blurb": "A tool-using agent edits a small repo: model calls, a clock tool, file writes, a notification. Workspace snapshotted before every call."
+  },
+  {
+    "file": "coding-agent-rerun.khn",
+    "title": "Same task, re-run",
+    "blurb": "The same agent and task run again live. Compare it with the first run to see where they diverge."
+  },
+  {
+    "file": "coding-agent-fork.khn",
+    "title": "Fork at call #4",
+    "blurb": "khonsu fork: calls 0–3 replayed from the recording (hollow marks), the review regenerated live."
+  },
+  {
+    "file": "weather-agent.khn",
+    "title": "Streaming + parallel",
+    "blurb": "Tool call, a streamed answer (with chunk timing), and three concurrent requests."
+  }
+]
