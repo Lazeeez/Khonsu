@@ -6,5 +6,7 @@ export default defineConfig({
   base: process.env.KHONSU_BASE ?? "/Khonsu/",
   plugins: [react()],
   worker: { format: "es" },
+  // the Benchmarks page imports the committed results in ../bench/results and ../study
+  server: { fs: { allow: [".."] } },
   build: { target: "es2022", sourcemap: true },
 });
