@@ -98,6 +98,9 @@ public:
   [[nodiscard]] std::uint64_t file_size(NodeRef file) const;
   [[nodiscard]] std::string file_read_all(NodeRef file) const;
   [[nodiscard]] std::vector<PageSlot> file_pages(NodeRef file) const;  // sorted by index
+  // Copies page `index` of a file into out (4 KiB); zero-fills holes. Returns the page's node (kEmpty for a hole).
+  NodeRef read_page(NodeRef file, std::uint64_t index, std::byte* out) const;
+  [[nodiscard]] NodeRef page_at(NodeRef file, std::uint64_t index) const;  // kEmpty for a hole
 
   // World-level helpers for files.
   [[nodiscard]] NodeRef write_file(NodeRef root, std::string_view path, std::uint64_t offset, std::string_view data);
