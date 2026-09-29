@@ -409,6 +409,22 @@ std::vector<PageSlot> NodeStore::file_pages(NodeRef f) const {
   return out;
 }
 
+NodeRef NodeStore::read_page(NodeRef f, std::uint64_t index, std::byte* out) const {
+  const NodeRef e = f.tag() == Tag::File ? lookup(file(f).pages, index, {}) : kEmpty;
+  if (e.empty()) {
+    std::memset(out, 0, kPageSize);
+    return kEmpty;
+  }
+  const NodeRef p = entry(e).value;
+  std::memcpy(out, page(p).bytes.data(), kPageSize);
+  return p;
+}
+
+NodeRef NodeStore::page_at(NodeRef f, std::uint64_t index) const {
+  const NodeRef e = f.tag() == Tag::File ? lookup(file(f).pages, index, {}) : kEmpty;
+  return e.empty() ? kEmpty : entry(e).value;
+}
+
 std::string NodeStore::file_read_all(NodeRef f) const {
   if (f.tag() != Tag::File) return {};
   const File& fl = file(f);
