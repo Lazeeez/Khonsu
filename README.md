@@ -84,6 +84,18 @@ $ khonsu diff yesterday.khn today.khn
   ≠ A#1   B#1   mock-1  at messages[2].tool_calls[0].function.arguments
 ```
 
+## See a run in your browser
+
+**[Open the viewer →](https://lazeeez.github.io/Khonsu/#/viewer?src=coding-agent.khn)** Drop any `.khn`, or an **OpenTelemetry GenAI trace** (OTLP JSON from OpenLLMetry, OpenLIT, Langfuse, Phoenix…). It is parsed by the same C++ kernel, compiled to WebAssembly, so nothing leaves your machine.
+
+- **The Moon Dial**: the run is an orbit, each call a point on it, and the moon waxes as you travel from the first call to the last. Drag, click, or use the arrow keys.
+- **Every call in full**: the prompt as a transcript, the response, tool calls, and stream chunk timing.
+- **The workspace at that moment**: files before the call, and a diff of exactly what the call changed.
+- **Compare two runs**: the aligned run diff, with the first divergence explained.
+- **Integrity at a glance**: hash chain verified, torn tails recovered, forks linked to their parent.
+
+The site is code-split: the landing page ships no WebAssembly, and the viewer (7 KB gzipped plus the 400 KB kernel) loads on demand.
+
 ## Share runs with your team
 
 ```console
@@ -193,8 +205,8 @@ The recorder sits on a C++23 kernel that also compiles to WebAssembly. That kern
 | 2 | Workspace snapshots in the Merkle store (`fork run@N` restores the files too); `@khonsu.tool` Python SDK | ✅ done |
 | 3 | `khonsu diff` between runs; pytest plugin for deterministic agent tests in CI | ✅ done |
 | 4 | Sync recordings between machines with Merkle anti-entropy; CRDT annotations | ✅ done |
-| 5 | Web viewer: drop a `.khn` or OpenTelemetry GenAI trace; the Moon Dial time scrubber | next |
-| 6 | Real-agent study on a local model; benchmarks vs vcrpy and LangGraph checkpointers | |
+| 5 | Web viewer: drop a `.khn` or OpenTelemetry GenAI trace; the Moon Dial time scrubber | ✅ done |
+| 6 | Real-agent study on a local model; benchmarks vs vcrpy and LangGraph checkpointers | next |
 | 7 | Showcase: fork a *running* sandboxed program; speculative branches; Play mode | |
 
 ## License
