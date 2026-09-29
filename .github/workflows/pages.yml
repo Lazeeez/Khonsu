@@ -18,61 +18,53 @@ concurrency:
 jobs:
   native:
     name: Native tests (${{ matrix.preset }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moves to 26.04 in Oct 2026
     strategy:
       fail-fast: false
       matrix:
         preset: [native, native-asan, native-tsan]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: sudo apt-get update && sudo apt-get install -y ninja-build clang libssl-dev
-      - run: cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_COMPILER=clang++
-      - run: cmake --build --preset ${{ matrix.preset }}
-      - run: ctest --preset ${{ matrix.preset }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Integration (real OpenAI SDK, non-deterministic mock model, kill -9 trials)
-        run: |
-          python -m pip install --quiet openai
-          python tests/integration/run_integration.py build/${{ matrix.preset }}/khonsu
+      - run: python -m pip install --quiet openai pytest
+      - name: Build and run every suite (unit, model calls, workspace, diff/pytest, sync)
+        run: scripts/test_native.sh ${{ matrix.preset }}
         env:
-          TSAN_OPTIONS: halt_on_error=1 exitcode=66
-      - name: Workspace snapshots, time travel, forks, @khonsu.tool
-        run: python tests/integration/run_workspace.py build/${{ matrix.preset }}/khonsu
-        env:
-          PYTHONPATH: sdk/python/src
-          TSAN_OPTIONS: halt_on_error=1 exitcode=66
-      - name: khonsu diff and the pytest plugin
-        run: |
-          python -m pip install --quiet pytest
-          cd tests/integration && python run_ci.py ../../build/${{ matrix.preset }}/khonsu
-        env:
-          PYTHONPATH: ${{ github.workspace }}/sdk/python/src
-          TSAN_OPTIONS: halt_on_error=1 exitcode=66
+          PYTHON: python
+      - if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: logs-${{ matrix.preset }}
+          path: build/logs
       - if: matrix.preset == 'native'
         run: ./build/native/khonsu_bench --quick
       - if: matrix.preset == 'native'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: khonsu-linux-x86_64
           path: build/native/khonsu
 
   web:
     name: WebAssembly build, tests & E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: mymindstorm/setup-emsdk@v14
-        with:
-          version: latest
+      - uses: actions/checkout@v5
       - run: sudo apt-get update && sudo apt-get install -y ninja-build
-      - run: cmake --preset wasm
-      - run: cmake --build --preset wasm
-      - run: ctest --preset wasm
-      - uses: actions/setup-node@v4
+      - name: Emscripten SDK, WebAssembly build and kernel tests under Node
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install latest
+          "$RUNNER_TEMP/emsdk/emsdk" activate latest
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          cmake --preset wasm
+          cmake --build --preset wasm
+          ctest --preset wasm
+      - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
@@ -91,19 +83,19 @@ jobs:
           node e2e/smoke.mjs http://localhost:4173/${{ github.event.repository.name }}/ e2e-shots
         env:
           KHONSU_BASE: /${{ github.event.repository.name }}/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: e2e-screenshots
           path: web/e2e-shots
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: web/dist
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [native, web]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
