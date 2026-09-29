@@ -16,6 +16,7 @@
 #include "khonsu/recording.hpp"
 #include "khonsu/crdt.hpp"
 #include "khonsu/rundiff.hpp"
+#include "khonsu/views.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -537,43 +538,7 @@ int cmd_show(const Options& o) {
   };
 
   if (o.json) {
-    Json j;
-    j.begin_object();
-    j.field("format", r.run.format).field("mode", r.run.mode).field("command", r.run.command);
-    j.field("cwd", r.run.cwd).field("upstream", r.run.upstream).field("parent", r.run.parent);
-    j.field("workspace", r.run.workspace).field("snapshots", r.snapshots.size()).field("objects", r.objects.size());
-    j.field("object_bytes", r.objects.bytes());
-    j.field("started_unix_ms", r.run.started_unix_ms).field("digest", r.digest.hex()).field("chain_ok", r.chain_ok);
-    j.field("complete", r.end.has_value());
-    if (r.end) j.field("exit_code", r.end->exit_code).field("duration_us", r.end->duration_us);
-    j.key("snapshot_list").begin_array();
-    for (const auto& s : r.snapshots) {
-      j.begin_object().field("when", static_cast<int>(s.when)).field("seq", s.seq).field("root", s.root.hex());
-      j.field("files", s.files).field("bytes", s.bytes).field("new_objects", s.new_objects);
-      j.field("new_bytes", s.new_bytes).field("took_us", s.took_us).end_object();
-    }
-    j.end_array();
-    j.key("exchanges").begin_array();
-    for (std::size_t i = 0; i < r.exchanges.size(); ++i) {
-      const auto& ex = r.exchanges[i];
-      const auto s = rec::summarize(ex, 400);
-      j.begin_object().field("seq", ex.req.seq).field("t_us", ex.req.t_us).field("method", ex.req.method);
-      j.field("path", ex.req.path).field("key", ex.req.key.hex()).field("occurrence", ex.req.occurrence);
-      j.field("tool", ex.req.path == rec::kToolPath);
-      j.field("model", s.model).field("input", s.last_user_message).field("output", s.output_text);
-      j.field("tool_calls", s.tool_calls).field("prompt_tokens", s.prompt_tokens);
-      j.field("completion_tokens", s.completion_tokens);
-      if (ex.resp) {
-        j.field("status", ex.resp->status).field("latency_us", ex.resp->latency_us).field("streamed", ex.resp->streamed);
-        j.field("from_recording", ex.resp->from_recording);
-      }
-      j.key("workspace_changes").begin_array();
-      for (const auto& c : ws_change(i)) j.value(std::string(1, c.kind) + " " + c.path);
-      j.end_array();
-      j.end_object();
-    }
-    j.end_array().end_object();
-    std::printf("%s\n", j.str().c_str());
+    std::printf("%s\n", views::recording(r).c_str());
     return 0;
   }
 
@@ -632,27 +597,7 @@ int cmd_diff(const Options& o) {
   auto seq = [](const rec::Exchange* e) { return e ? "#" + std::to_string(e->req.seq) : std::string("—"); };
 
   if (o.json) {
-    Json j;
-    j.begin_object().field("identical", identical).field("same", d.same).field("a_calls", a.exchanges.size());
-    j.field("b_calls", b.exchanges.size()).field("a_tokens", d.a_tokens).field("b_tokens", d.b_tokens);
-    j.field("a_model_us", d.a_model_us).field("b_model_us", d.b_model_us);
-    if (d.first_divergence == SIZE_MAX) j.key("first_divergence").null();
-    else j.field("first_divergence", d.first_divergence);
-    j.key("calls").begin_array();
-    for (const auto& c : d.calls) {
-      j.begin_object().field("kind", rec::kind_name(c.kind)).field("label", label(c.a ? c.a : c.b));
-      if (c.a) j.field("a_seq", c.a->req.seq);
-      if (c.b) j.field("b_seq", c.b->req.seq);
-      if (!c.field.empty()) j.field("field", c.field);
-      if (!c.a_value.empty() || !c.b_value.empty()) j.field("a", c.a_value).field("b", c.b_value);
-      j.key("workspace_before").begin_array();
-      for (const auto& f : c.workspace_before) j.value(std::string(1, f.kind) + " " + f.path);
-      j.end_array().end_object();
-    }
-    j.end_array().key("workspace_end").begin_array();
-    for (const auto& f : d.workspace_end) j.value(std::string(1, f.kind) + " " + f.path);
-    j.end_array().end_object();
-    std::printf("%s\n", j.str().c_str());
+    std::printf("%s\n", views::diff(d, a, b).c_str());
     return identical ? 0 : 1;
   }
 
