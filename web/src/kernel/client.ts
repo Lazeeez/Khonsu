@@ -8,6 +8,7 @@ import type {
   VerifyResult,
   World,
 } from "./types";
+import type { CallView, FileChange, FileContent, FileEntry, RecordingView, RunDiffView } from "../viewer/types";
 
 type Pending = { resolve: (v: any) => void; reject: (e: Error) => void };
 
@@ -60,5 +61,20 @@ export class KernelClient {
   gc = () => this.call<{ freed: number; ms: number }>("gc");
   bench = (quick: boolean) => this.call<BenchResult>("bench", quick);
   exportLog = (tid: number) => this.call<Uint8Array<ArrayBuffer>>("exportLog", tid);
+  // Recordings (.khn) for the viewer.
+  recLoad = (bytes: Uint8Array) => this.call<RecordingView & { handle: number }>("recLoad", bytes);
+  recCall = (h: number, i: number) => this.call<CallView>("recCall", h, i);
+  recFiles = (h: number, root: string) => this.call<FileEntry[]>("recFiles", h, root);
+  recFile = (h: number, root: string, path: string) => this.call<FileContent>("recFile", h, root, path);
+  recChanges = (h: number, from: string, to: string) => this.call<FileChange[]>("recChanges", h, from, to);
+  recDiff = (a: number, b: number) => this.call<RunDiffView>("recDiff", a, b);
+  recClose = (h: number) => this.call<void>("recClose", h);
   importLog = (bytes: Uint8Array) => this.call<{ id: number; error: string }>("importLog", bytes);
+}
+
+let shared: KernelClient | null = null;
+/** One kernel worker for the whole app, created on first use (the landing page never pays for it). */
+export function kernel(): KernelClient {
+  if (!shared) shared = new KernelClient();
+  return shared;
 }
