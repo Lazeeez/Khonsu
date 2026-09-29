@@ -42,8 +42,9 @@ std::unique_ptr<Stream> connect(const Endpoint& e, int timeout_ms, std::string* 
 class Listener {
 public:
   ~Listener();
-  // Binds 127.0.0.1:port (0 = ephemeral).
-  bool listen(std::uint16_t port, std::string* error);
+  // Binds host:port (0 = ephemeral). Loopback by default; the recording proxy
+  // never listens elsewhere, the shared store server may (explicit --bind).
+  bool listen(std::uint16_t port, std::string* error, const std::string& host = "127.0.0.1");
   // Blocks; returns nullptr after shutdown().
   std::unique_ptr<Stream> accept();
   // Wakes a thread blocked in accept(). Safe to call from any thread.
