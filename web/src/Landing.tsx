@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Flaky } from "./components/Flaky";
 import { MoonDial, type DialTick } from "./viewer/MoonDial";
 
 const REPO_URL: string | undefined = import.meta.env.VITE_REPO_URL;
@@ -22,10 +23,10 @@ const FEATURES = [
 ];
 
 const STATS = [
-  { v: "4 KiB", k: "sent to share a 1.37 MB fork" },
+  { v: "76%", k: "of tokens reused when you edit one prompt" },
   { v: "80 / 80", k: "kill -9 trials: every observed response survived" },
   { v: "34 ms", k: "snapshot of a 20,000-file repo" },
-  { v: "0", k: "tokens to replay a recorded run" },
+  { v: "4 KiB", k: "sent to share a 1.37 MB fork" },
 ];
 
 export function Landing() {
@@ -73,6 +74,8 @@ export function Landing() {
         </pre>
       </section>
 
+      <Flaky />
+
       <section className="features">
         {FEATURES.map((f) => (
           <article key={f.h} className="feature">
@@ -90,13 +93,17 @@ export function Landing() {
       </section>
 
       <section className="also">
+        <a className="also-card" href="#/play">
+          <h3>Play: fork a running program</h3>
+          <p>A tiny deterministic VM keeps its whole state in Khonsu's Merkle store. Fork it mid-loop in microseconds, change a variable in the fork, or run a dozen futures at once and watch which pages each one copies.</p>
+        </a>
         <a className="also-card" href="#/simulator">
           <h3>Simulator</h3>
           <p>The deterministic kernel compiled to WebAssembly: fork a multi-agent run in ~1 µs, speculate 8 futures, tamper with history and watch verification catch it.</p>
         </a>
         <a className="also-card" href="#/bench">
           <h3>Benchmarks</h3>
-          <p>Run the engine's benchmark suite on your own device: persistent Merkle state versus copy-on-write page tables versus deep copies.</p>
+          <p>Khonsu against vcrpy and LangGraph checkpointers, and the engine's own suite run on your device: persistent Merkle state versus page tables versus deep copies.</p>
         </a>
       </section>
 
