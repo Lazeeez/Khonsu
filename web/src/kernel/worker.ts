@@ -69,6 +69,17 @@ const methods: Record<string, (m: KhonsuModule, ...a: any[]) => unknown> = {
   recChanges: (m, h: number, from: string, to: string) => json(m, "kh_rec_changes", [N, S, S], [h, from, to]),
   recDiff: (m, a: number, b: number) => json(m, "kh_rec_diff", [N, N], [a, b]),
   recClose: (m, h: number) => m.ccall("kh_rec_close", null, [N], [h]),
+  // Lune, the forkable VM (Play). Compile errors come back as data ({error, line}), not exceptions.
+  luneNew: (m, src: string, gas: number) => JSON.parse(m.ccall("kh_lune_new", S, [S, N], [src, gas]) as string),
+  luneRun: (m, id: number, steps: number) => json(m, "kh_lune_run", [N, N], [id, steps]),
+  luneState: (m, id: number) => json(m, "kh_lune_state", [N], [id]),
+  luneFork: (m, id: number) => json(m, "kh_lune_fork", [N], [id]),
+  luneSet: (m, id: number, name: string, v: number) => json(m, "kh_lune_set", [N, S, N], [id, name, v]),
+  luneSpeculate: (m, id: number, v: string, from: number, n: number, budget: number) =>
+    json(m, "kh_lune_speculate", [N, S, N, N, N], [id, v, from, n, budget]),
+  lunePages: (m, id: number) => json(m, "kh_lune_pages", [N], [id]),
+  luneFree: (m, id: number) => m.ccall("kh_lune_free", null, [N], [id]),
+  luneGc: (m) => json(m, "kh_lune_gc", [], []),
   exportLog: (m, tid: number) => {
     const ptr = m.ccall("kh_export", N, [N], [tid]) as number;
     const len = m.ccall("kh_blob_len", N, [], []) as number;
