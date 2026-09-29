@@ -3,18 +3,23 @@
   "configurePresets": [
     {
       "name": "wasm",
-      "displayName": "WebAssembly (Emscripten) — web module + tests + bench",
+      "displayName": "WebAssembly (Emscripten) \u2014 web module + tests + bench",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/wasm",
       "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "KHONSU_BUILD_WEB": "ON" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "KHONSU_BUILD_WEB": "ON"
+      }
     },
     {
       "name": "native",
       "displayName": "Native release",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/native",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     },
     {
       "name": "native-asan",
@@ -25,16 +30,64 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer"
       }
+    },
+    {
+      "name": "native-tsan",
+      "displayName": "Native ThreadSanitizer",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/native-tsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "wasm", "configurePreset": "wasm" },
-    { "name": "native", "configurePreset": "native" },
-    { "name": "native-asan", "configurePreset": "native-asan" }
+    {
+      "name": "wasm",
+      "configurePreset": "wasm"
+    },
+    {
+      "name": "native",
+      "configurePreset": "native"
+    },
+    {
+      "name": "native-asan",
+      "configurePreset": "native-asan"
+    },
+    {
+      "name": "native-tsan",
+      "configurePreset": "native-tsan"
+    }
   ],
   "testPresets": [
-    { "name": "wasm", "configurePreset": "wasm", "output": { "outputOnFailure": true } },
-    { "name": "native", "configurePreset": "native", "output": { "outputOnFailure": true } },
-    { "name": "native-asan", "configurePreset": "native-asan", "output": { "outputOnFailure": true } }
+    {
+      "name": "wasm",
+      "configurePreset": "wasm",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "native",
+      "configurePreset": "native",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "native-asan",
+      "configurePreset": "native-asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "native-tsan",
+      "configurePreset": "native-tsan",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
   ]
 }
