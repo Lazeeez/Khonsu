@@ -3,3 +3,6 @@ build/
 .cache/
 compile_commands.json
 .khonsu/
+__pycache__/
+*.pyc
+*.egg-info/
