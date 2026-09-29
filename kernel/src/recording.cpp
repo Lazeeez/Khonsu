@@ -68,7 +68,7 @@ std::string text_of_content(const jsonv::Value* c) {
 std::vector<std::byte> encode(const RunInfo& v) {
   Writer w;
   w.str(v.format).str(v.tool_version).str(v.mode).str(v.command).str(v.cwd).str(v.upstream).str(v.parent);
-  w.varint(v.started_unix_ms);
+  w.varint(v.started_unix_ms).str(v.workspace);
   return w.bytes();
 }
 
@@ -108,6 +108,7 @@ std::optional<RunInfo> decode_run(std::span<const std::byte> p) {
   v.parent = std::string(r.str());
   v.started_unix_ms = r.varint();
   if (!r.ok()) return std::nullopt;
+  if (!r.done()) v.workspace = std::string(r.str());
   return v;
 }
 
@@ -214,6 +215,12 @@ std::optional<Recording> Recording::load(std::span<const std::byte> bytes, std::
           if (it != by_seq.end()) rec.exchanges[it->second].resp = std::move(*s);
         }
         break;
+      case FrameType::Object:
+        if (auto o = ws::decode_object(f.payload)) rec.objects.put(o->kind, o->id, std::move(o->bytes));
+        break;
+      case FrameType::Snapshot:
+        if (auto s = ws::decode_snapshot(f.payload)) rec.snapshots.push_back(*s);
+        break;
       case FrameType::RunEnd:
         if (auto e = decode_end(f.payload)) {
           rec.chain_ok = e->chain == chain;
@@ -237,6 +244,20 @@ std::optional<Recording> Recording::load(std::span<const std::byte> bytes, std::
 
 ExchangeSummary summarize(const Exchange& ex, std::size_t max_chars) {
   ExchangeSummary s;
+  if (ex.req.path == kToolPath) {  // @khonsu.tool call: {"name","args"} -> {"ok","result"|"error"}
+    if (auto call = jsonv::parse(ex.req.body)) {
+      s.tool_calls = std::string(call->str("name"));
+      s.model = "tool " + s.tool_calls;
+      if (const auto* a = call->get("args")) s.last_user_message = trunc(jsonv::canonical(*a), max_chars);
+    }
+    if (ex.resp)
+      if (auto out = jsonv::parse(ex.resp->body)) {
+        const auto* v = out->get("result");
+        if (!v) v = out->get("error");
+        if (v) s.output_text = trunc(v->kind() == jsonv::Kind::String ? v->as_string() : jsonv::canonical(*v), max_chars);
+      }
+    return s;
+  }
   if (auto req = jsonv::parse(ex.req.body)) {
     s.model = std::string(req->str("model"));
     if (const auto* msgs = req->get("messages"); msgs && msgs->kind() == jsonv::Kind::Array) {
@@ -307,9 +328,38 @@ ExchangeSummary summarize(const Exchange& ex, std::size_t max_chars) {
 // Replay matching
 // ---------------------------------------------------------------------------------
 
-ReplayIndex::ReplayIndex(const Recording& r) : rec_(r), used_(r.exchanges.size(), false) {
-  for (std::size_t i = 0; i < r.exchanges.size(); ++i)
-    if (r.exchanges[i].resp) by_key_[r.exchanges[i].req.key].push_back(i);  // already in seq order
+ReplayIndex::ReplayIndex(const Recording& r, std::uint64_t live_from) : rec_(r), used_(r.exchanges.size(), false) {
+  for (std::size_t i = 0; i < r.exchanges.size(); ++i) {
+    if (r.exchanges[i].resp && r.exchanges[i].req.seq < live_from)
+      by_key_[r.exchanges[i].req.key].push_back(i);  // already in seq order
+    else {
+      used_[i] = true;  // never expected: not part of the replayable prefix
+      excluded_[r.exchanges[i].req.key] = true;
+    }
+  }
+}
+
+bool ReplayIndex::excluded(const Digest128& key) const {
+  std::lock_guard lock(mu_);
+  return excluded_.contains(key);
+}
+
+const ws::Snapshot* Recording::snapshot_before(std::uint64_t seq) const {
+  for (const auto& s : snapshots)
+    if (s.when == ws::When::BeforeRequest && s.seq == seq) return &s;
+  return nullptr;
+}
+
+const ws::Snapshot* Recording::snapshot_at(ws::When when) const {
+  for (auto it = snapshots.rbegin(); it != snapshots.rend(); ++it)
+    if (it->when == when) return &*it;
+  return nullptr;
+}
+
+const Exchange* Recording::exchange(std::uint64_t seq) const {
+  for (const auto& e : exchanges)
+    if (e.req.seq == seq) return &e;
+  return nullptr;
 }
 
 const Exchange* ReplayIndex::take(const Digest128& key, std::string_view canonical, Miss* miss) {
@@ -339,6 +389,7 @@ const Exchange* ReplayIndex::take(const Digest128& key, std::string_view canonic
       }
     } else {
       miss->field_path = "(recording exhausted: the agent made more requests than were recorded)";
+      miss->exhausted = true;
     }
   }
   return nullptr;
