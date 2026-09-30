@@ -2,21 +2,55 @@
   {
     "file": "coding-agent.khn",
     "title": "Coding agent",
-    "blurb": "A tool-using agent edits a small repo: model calls, a clock tool, file writes, a notification. Workspace snapshotted before every call."
+    "blurb": "A tool-using agent edits a small repo: model calls, a clock tool, file writes, a notification. Workspace snapshotted before every call.",
+    "summary": "An agent was asked to add a greeting endpoint to a small repository. It asked the model for an answer, saved it to a file, asked the model to review it, saved the review, and sent a notification. The model here is a test model that answers with random words, so every live run is different, which is exactly the problem Khonsu solves.",
+    "story": [
+      { "call": 0, "text": "The agent read the clock through a recorded tool. On replay the same timestamp comes back, so time-dependent code behaves identically." },
+      { "call": 1, "text": "The first model call: the task goes in, an answer comes out. Select it to see the full prompt and response." },
+      { "call": 2, "text": "The agent wrote out/answer.md. The workspace panel marks it as new at this call, and clicking it shows exactly what was written." },
+      { "call": 3, "text": "It saved the recorded timestamp to out/meta.json." },
+      { "call": 4, "text": "The second model call reviews the answer. Its prompt contains the answer from call #1, so if #1 ever changes, this call changes too." },
+      { "call": 5, "text": "The review was written to out/review.md." },
+      { "call": 6, "text": "A notification: an external side effect. On replay it is not sent again; the recorded result is returned instead." },
+      { "text": "All of it is one small file: 7 calls and 9 snapshots of the repository, protected by a hash chain (the \"integrity verified\" chip)." }
+    ]
   },
   {
     "file": "coding-agent-rerun.khn",
     "title": "Same task, re-run",
-    "blurb": "The same agent and task run again live. Compare it with the first run to see where they diverge."
+    "blurb": "The same agent and task run again live. Compare it with the first run to see where they diverge.",
+    "summary": "The same agent and the same task as Coding agent, run a second time live. Nothing in the code changed, yet the run is different: the model sampled a different answer, and everything that depends on it changed too.",
+    "story": [
+      { "call": 0, "text": "The clock reads a different time: this was a new live run." },
+      { "call": 1, "text": "Same prompt, different answer. This is where the two runs first diverge." },
+      { "call": 4, "text": "The review prompt is different too, because it contains the answer from call #1." },
+      { "text": "Open Coding agent from Examples and press \"Compare with a re-run\": Khonsu lines the two runs up call by call and points at the first divergence and the exact JSON field." }
+    ]
   },
   {
     "file": "coding-agent-fork.khn",
     "title": "Fork at call #4",
-    "blurb": "khonsu fork: calls 0–3 replayed from the recording (hollow marks), the review regenerated live."
+    "blurb": "khonsu fork: calls 0–3 replayed from the recording (hollow marks), the review regenerated live.",
+    "summary": "Made with `khonsu fork coding-agent.khn@4`: go back to call #4 of the Coding agent run and let the future play out again. The files were restored as they were at the start, calls #0–#3 came from the recording (no model, no cost), and the agent went live from #4.",
+    "story": [
+      { "call": 0, "text": "Calls #0 to #3 are hollow on the dial: they were served from the original recording, byte for byte." },
+      { "call": 1, "text": "The first answer is identical to the original run's, because it was replayed rather than sampled again." },
+      { "call": 4, "text": "The fork point: from here the model was called for real, and it wrote a new review." },
+      { "call": 5, "text": "The new review was saved; compare the file with the original run's." },
+      { "call": 6, "text": "The notification was really sent this time, because it came after the fork point." },
+      { "text": "The fork is saved as its own recording that remembers its parent (see \"parent\" in the header)." }
+    ]
   },
   {
     "file": "weather-agent.khn",
     "title": "Streaming + parallel",
-    "blurb": "Tool call, a streamed answer (with chunk timing), and three concurrent requests."
+    "blurb": "Tool call, a streamed answer (with chunk timing), and three concurrent requests.",
+    "summary": "A different agent that uses function calling and streaming, then fires three requests at the same time.",
+    "story": [
+      { "call": 0, "text": "The model asked the agent to call get_weather. The request, the tool-call arguments, and the model's choice are all recorded." },
+      { "call": 1, "text": "The final answer was streamed token by token. The token-stream chart shows when each chunk arrived, and replay can reproduce that timing." },
+      { "call": 2, "text": "Calls #2 to #4 were sent at the same moment. Khonsu matches requests by their content, so they replay correctly in any order." },
+      { "text": "This agent has no workspace, so the file panel is empty: recording works with or without one." }
+    ]
   }
 ]
