@@ -688,3 +688,9 @@ a:hover { text-decoration: none; }
   .enter, .display.enter { animation: none !important; }
 }
 .terminal .tl.p { color: var(--text); }
+
+/* transport rows never force the page wider: sliders shrink (Firefox gives range inputs an intrinsic width) */
+.transport > * { min-width: 0; }
+.scrub input[type=range] { min-width: 0; width: 100%; }
+.scrub .pos { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 760px) { .scrub { flex: 1 1 100%; min-width: 0; } }
