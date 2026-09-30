@@ -2,7 +2,7 @@
 # Builds one native preset and runs every test suite against it. Full output of
 # each suite goes to build/logs/<preset>-<suite>.log (uploaded by CI on failure);
 # the console shows the pass/fail summary.
-#   scripts/test_native.sh [native|native-asan|native-tsan]   (needs: clang++, ninja, python with openai + pytest)
+#   scripts/test_native.sh [native|native-asan|native-tsan]   (needs: clang++, ninja, python with openai + pytest; node >= 18 for the JS SDK suite)
 set -uo pipefail
 preset="${1:-native}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -40,5 +40,10 @@ run integration "$py" tests/integration/run_integration.py "$bin"
 run workspace "$py" tests/integration/run_workspace.py "$bin"
 run ci bash -c "cd tests/integration && '$py' run_ci.py '$bin'"
 run sync bash -c "cd tests/integration && '$py' run_sync.py '$bin'"
+if command -v node >/dev/null; then
+  run js bash -c "cd tests/integration && '$py' run_js.py '$bin'"
+else
+  echo "== js ($preset): skipped (node not installed)"
+fi
 echo "== $preset: $([ $status -eq 0 ] && echo ALL PASSED || echo FAILURES)"
 exit $status
