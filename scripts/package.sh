@@ -2,7 +2,7 @@
 # Builds the downloadable Khonsu packages (no source code inside):
 #   khonsu-<v>-linux-x86_64.tar.gz   the CLI binary (C++ runtime and OpenSSL linked statically),
 #                                    both SDKs and a quickstart
-#   khonsu-<v>-py3-none-any.whl      the Python SDK      khonsu-<v>.tgz   the JavaScript SDK
+#   khonsu_sdk-<v>-py3-none-any.whl  the Python SDK      khonsu-sdk-<v>.tgz  the JavaScript SDK
 #   SHA256SUMS, downloads.json (read by the website's Downloads page), install.sh
 #
 #   scripts/package.sh OUT_DIR SITE_URL      e.g. scripts/package.sh web/public/downloads https://you.github.io/Khonsu
@@ -73,7 +73,7 @@ EOF
 tar -C "$stage" -czf "$stage/$name.tar.gz" "$name"
 
 mkdir -p "$out"
-rm -f "$out"/khonsu-* "$out"/SHA256SUMS "$out"/downloads.json "$out"/install.sh
+rm -f "$out"/khonsu* "$out"/SHA256SUMS "$out"/downloads.json "$out"/install.sh
 cp "$stage/$name.tar.gz" "$stage/sdk/$wheel" "$stage/sdk/$tgz" "$out/"
 (cd "$out" && sha256sum "$name.tar.gz" "$wheel" "$tgz" > SHA256SUMS)
 
@@ -87,8 +87,21 @@ def entry(f, kind, label):
     p = os.path.join(out, f)
     return {"file": f, "kind": kind, "label": label, "bytes": os.path.getsize(p),
             "sha256": hashlib.sha256(open(p, "rb").read()).hexdigest()}
+def published(url):
+    # Is this version live on the public registry? (The Downloads page then offers the short
+    # `pip install khonsu-sdk` / `npm install khonsu-sdk`; until then, the direct file URLs.)
+    import urllib.request
+    try:
+        with urllib.request.urlopen(url, timeout=10) as r:
+            return r.status == 200
+    except Exception:
+        return False
 manifest = {
     "version": version,
+    "registries": {
+        "pypi": published(f"https://pypi.org/pypi/khonsu-sdk/{version}/json"),
+        "npm": published(f"https://registry.npmjs.org/khonsu-sdk/{version}"),
+    },
     "built": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d"),
     "glibc": glibc,
     "files": [entry(archive, "cli", "Khonsu CLI for Linux x86-64 (includes both SDKs)"),
