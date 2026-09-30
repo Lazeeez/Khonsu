@@ -34,6 +34,15 @@ step("landing renders, with the study evidence");
 await page.waitForTimeout(600);
 await shot("01-landing");
 
+// ── guide: the nav link, a tour card that deep-links into its page ──────────────────────────
+await page.getByRole("link", { name: "Guide", exact: true }).click();
+await expectText("How to use Khonsu");
+await expectText("Take the tour");
+await page.locator("#g-play").getByRole("link", { name: /Open Play/ }).waitFor();
+step("guide renders with the tour and deep links");
+await shot("01b-guide");
+await page.goto(base);
+
 // ── viewer: open a recorded run from the landing CTA ──────────────────────────────────────────
 await page.getByRole("link", { name: "Open a recorded run" }).click();
 await expectText("integrity verified");
