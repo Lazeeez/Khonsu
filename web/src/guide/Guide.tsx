@@ -280,7 +280,7 @@ def write_file(path: str, text: str) -> int: ...`}</Code>
               </div>
               <div>
                 <h3>JavaScript / TypeScript</h3>
-                <Code>{`import { tool } from "khonsu";
+                <Code>{`import { tool } from "khonsu-sdk";
 
 const sendEmail = tool("sendEmail", async (to, body) => { ... });
 
