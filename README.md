@@ -138,7 +138,7 @@ Existing tools cover pieces. Tracing SaaS (LangSmith, Langfuse, Phoenix) *shows*
 - **Framework-agnostic by construction.** Recording happens at the HTTP boundary ([ADR 0001](docs/adr/0001-record-at-the-http-boundary.md)).
 - **Exact, order-independent matching.** Requests are matched by a hash of their canonical JSON (numbers kept as original lexemes, so `0.10` is never rewritten as `0.1`) plus an occurrence count, so parallel requests replay correctly regardless of arrival order ([ADR 0003](docs/adr/0003-canonical-json-and-match-keys.md)).
 - **Durable before observable.** A response is `fdatasync`'d before the agent can see it complete, so *if the agent saw it, it's in the recording*. Verified by kill -9 trials and torn-write tests ([ADR 0004](docs/adr/0004-durable-before-observable.md)).
-- **Streaming-faithful.** SSE token streams are recorded with chunk boundaries and timing, and replayed instantly or in real time (`--realtime`).
+- **Streaming-faithful.** SSE token streams are recorded with chunk boundaries and timing, and replayed instantly or in real time (`--realtime`). `show` and the viewer understand OpenAI Chat Completions, OpenAI Responses and Anthropic Messages, buffered or streamed.
 - **Secrets never touch disk.** `Authorization` and API-key headers are recorded only as `<redacted>` (tested).
 - **Tamper-evident.** Every frame has a CRC32C, and `RunEnd` commits to a hash chain over all frames, so `khonsu verify` catches bit-rot *and* rewritten history.
 - **Workspace time travel.** Before every call the working directory is captured as a content-addressed Merkle tree *inside* the recording, so a `.khn` file is self-contained. Unchanged files and subtrees are shared: on a 20,000-file repo, a later snapshot takes 34 ms and a one-file edit adds 10 KiB. `.gitignore` is honoured, and `.env`, keys and credential files are never captured ([ADR 0005](docs/adr/0005-workspace-snapshots-inside-the-recording.md)).
@@ -157,7 +157,8 @@ cmake --preset native && cmake --build --preset native
 ./build/native/khonsu serve --replay run.khn  # long-running proxy; prints the OPENAI_BASE_URL to use
 ./build/native/khonsu files run.khn@3         # workspace listing before call #3
 ./build/native/khonsu fork run.khn@3 -- python agent.py
-pip install ./sdk/python                      # @khonsu.tool
+pip install ./sdk/python                      # @khonsu.tool (Python)
+npm install ./sdk/js                          # tool() for Node/TypeScript agents, same protocol
 ```
 
 ```python
@@ -197,7 +198,9 @@ The study also found a bug in Khonsu itself: `rerun` tools returned fresh output
 | Workspace suite (25 checks) | gitignore semantics; secrets never captured; `cat`/`checkout` at any call; every snapshot restorable; replay verifies the workspace before every call and names drifted files; forks restore files, replay the prefix and run side effects past the fork point for real; a `rerun` tool with a timing in its output still replays exactly |
 | Sync suite (17 checks) | dedup across runs; push/pull over a directory and HTTP (byte-identical); fork push sends only new objects; one-comparison no-op sync; concurrent notes converge; LWW refs and tombstones; token auth; corrupted remote objects rejected |
 | CI suite (10 checks) | `diff`: live runs diverge at the right call and field; a run and its replay are identical. pytest plugin: records, then replays offline and deterministically; a prompt change fails with the divergence report; a missing recording fails with instructions |
-| Unit + model-based property tests (57) | Persistent Merkle store, log, canonical JSON, matching, snapshot trees, pack/unpack, Merkle summaries, CRDT semilattice laws (3 replicas × 60 random histories); Lune: forking at random instructions reproduces the uninterrupted run, one write after a fork copies one page |
+| Unit + model-based property tests (60) | Persistent Merkle store, log, canonical JSON, matching, snapshot trees, pack/unpack, Merkle summaries, CRDT semilattice laws (3 replicas × 60 random histories); Lune: forking at random instructions reproduces the uninterrupted run, one write after a fork copies one page |
+| JavaScript SDK suite (13 checks) | A Node agent recorded, then replayed with the model offline: identical output; side effects not repeated; `rerun` tools run again but return the recorded result; errors replay as the same type; changed arguments raise `KhonsuDivergence` |
+| Web: E2E plus a **device matrix** | Every page in Chromium, Firefox and WebKit (Safari's engine) at phone, tablet and desktop sizes: no page or console errors, no horizontal overflow, and the WebAssembly worker runs in each engine |
 | **ASan + UBSan, ThreadSanitizer**, Clang 18 and GCC 13, and WebAssembly under Node | Run in CI on every push. TSan caught a real listener shutdown race ([ADR 0002](docs/adr/0002-thread-per-connection.md)) |
 
 ```bash
