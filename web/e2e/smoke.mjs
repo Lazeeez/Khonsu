@@ -40,6 +40,15 @@ await expectText("How to use Khonsu");
 await expectText("Take the tour");
 await page.locator("#g-play").getByRole("link", { name: /Open Play/ }).waitFor();
 step("guide renders with the tour and deep links");
+await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Download", exact: true }).click();
+await expectText("Install in one line");
+const installCmd = await page.locator(".dl-main .dl-cmd code").innerText();
+if (!/curl -fsSL .*\/downloads\/install\.sh \| sh/.test(installCmd)) errors.push(`install command looks wrong: ${installCmd}`);
+for (const href of await page.locator(".dl-file a").evaluateAll((as) => as.map((a) => a.href))) {
+  const r = await page.request.get(href);
+  if (!r.ok()) errors.push(`download ${href}: HTTP ${r.status()}`);
+}
+step("downloads page: install command and every file is served");
 await shot("01b-guide");
 await page.goto(base);
 
@@ -62,6 +71,24 @@ await page.getByRole("button", { name: "Compare with a re-run" }).click();
 await expectText("First divergence");
 step("compare: run diff finds the first divergence");
 await shot("03-compare");
+
+// Examples menu, the example's story behind the "?", and readable tool arguments.
+await page.getByRole("button", { name: "Close compare" }).click();
+await page.getByRole("button", { name: /^Examples/ }).click();
+await page.getByRole("menuitem", { name: /Fork at call #4/ }).click();
+await expectText("fork of");
+await page.getByRole("button", { name: /What happened in this example/ }).click();
+await expectText("About this example");
+await page.locator(".fab-panel").getByRole("button", { name: "#4" }).click();
+if ((await page.getByRole("slider", { name: /Moon Dial/ }).getAttribute("aria-valuenow")) !== "4") errors.push("story: #4 did not select call 4");
+await page.keyboard.press("Escape");
+await page.locator(".fab-panel").waitFor({ state: "detached" });
+await page.getByRole("slider", { name: /Moon Dial/ }).focus();
+await page.keyboard.press("Home");
+await page.keyboard.press("ArrowRight");
+await page.keyboard.press("ArrowRight");  // call #2: write_file(out/answer.md)
+await page.locator(".arg .codeview .cl", { hasText: "# answer" }).first().waitFor();
+step("examples menu, example story with call links, formatted tool arguments");
 
 // Drop-in import of an OpenTelemetry GenAI trace (no .khn needed).
 const otel = readFileSync(new URL("./fixtures/otel-genai.json", import.meta.url));
