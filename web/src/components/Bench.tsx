@@ -3,6 +3,7 @@ import { kernel } from "../kernel/client";
 import type { BenchForkRow, BenchResult } from "../kernel/types";
 import reference from "../lib/reference-bench.json";
 import { fmtNs } from "../lib/ui";
+import { PageHelp } from "./PageHelp";
 import { Results } from "./Results";
 
 const SERIES = [
@@ -86,6 +87,12 @@ export function Bench() {
   const k = result.kernel;
   return (
     <div className="bench">
+      <div className="bench-help">
+        <PageHelp id="bench" title="Benchmarks" steps={[
+          <><b>Against the alternatives</b> shows Khonsu measured on a real agent and against vcrpy and LangGraph.</>,
+          <>Press <b>Quick run</b> to time Khonsu's engine in your own browser; the charts update with your numbers.</>,
+        ]} />
+      </div>
       <div className="panel">
         <div className="panel-b" style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
           <div className="prose" style={{ flex: 1, minWidth: 280 }}>
