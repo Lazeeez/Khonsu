@@ -68,7 +68,7 @@ private:
 };
 
 // Non-blocking connect with a deadline, then back to blocking with I/O timeouts.
-int connect_fd(const Endpoint& e, int timeout_ms, std::string* error) {
+int connect_fd(const Endpoint& e, int timeout_ms, int io_timeout_ms, std::string* error) {
   addrinfo hints{};
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
@@ -100,7 +100,7 @@ int connect_fd(const Endpoint& e, int timeout_ms, std::string* error) {
     }
     if (rc == 0) {
       ::fcntl(fd, F_SETFL, flags);
-      set_timeouts(fd, timeout_ms);
+      set_timeouts(fd, io_timeout_ms);
       break;
     }
     last = std::strerror(errno);
@@ -226,8 +226,8 @@ std::string to_string(const Endpoint& e) {
          e.base_path;
 }
 
-std::unique_ptr<Stream> connect(const Endpoint& e, int timeout_ms, std::string* error) {
-  const int fd = connect_fd(e, timeout_ms, error);
+std::unique_ptr<Stream> connect(const Endpoint& e, int timeout_ms, std::string* error, int io_timeout_ms) {
+  const int fd = connect_fd(e, timeout_ms, io_timeout_ms < 0 ? timeout_ms : io_timeout_ms, error);
   if (fd < 0) return nullptr;
   if (!e.tls) return std::make_unique<TcpStream>(fd);
 #if KHONSU_WITH_TLS
