@@ -358,6 +358,10 @@ int run_proxy(const Options& o, const RunPlan& plan) {
         {"KHONSU_MODE", plan.mode == Mode::Record ? "record" : "replay"},
     };
     if (!std::getenv("OPENAI_API_KEY")) env.emplace_back("OPENAI_API_KEY", "khonsu-no-key");  // SDKs insist on one
+    // The Anthropic SDK reads its own variable (and appends /v1 itself). Point it at the proxy
+    // when the model is Anthropic's: the upstream now, or the one the recording was made with.
+    const std::string up = upstream ? upstream->host : replay.run.upstream;
+    if (up.find("anthropic.com") != std::string::npos) env.emplace_back("ANTHROPIC_BASE_URL", origin);
     code = run_child(o.argv, env, plan.child_cwd, &err);
     if (code < 0) {
       std::fprintf(stderr, "khonsu: cannot run %s\n", err.c_str());
