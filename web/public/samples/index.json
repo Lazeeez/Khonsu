@@ -1,56 +1,62 @@
 [
   {
-    "file": "coding-agent.khn",
-    "title": "Coding agent",
-    "blurb": "A tool-using agent edits a small repo: model calls, a clock tool, file writes, a notification. Workspace snapshotted before every call.",
-    "summary": "An agent was asked to add a greeting endpoint to a small repository. It asked the model for an answer, saved it to a file, asked the model to review it, saved the review, and sent a notification. The model here is a test model that answers with random words, so every live run is different, which is exactly the problem Khonsu solves.",
+    "file": "support-agent.khn",
+    "title": "Support agent: a refund request",
+    "blurb": "A real model handles a customer's refund: looks up the order, checks the policy, refunds, emails. Real side effects.",
+    "summary": "A customer, Dana, writes in: her desk lamp arrived with a cracked base and she wants her money back. A support agent built on the OpenAI SDK and a real model (qwen2.5:3b) handles it with four tools. Two of them change the outside world: one issues a refund through the payment provider, the other emails the customer. Everything the agent saw and did is in this one recording.",
     "story": [
-      { "call": 0, "text": "The agent read the clock through a recorded tool. On replay the same timestamp comes back, so time-dependent code behaves identically." },
-      { "call": 1, "text": "The first model call: the task goes in, an answer comes out. Select it to see the full prompt and response." },
-      { "call": 2, "text": "The agent wrote out/answer.md. The workspace panel marks it as new at this call, and clicking it shows exactly what was written." },
-      { "call": 3, "text": "It saved the recorded timestamp to out/meta.json." },
-      { "call": 4, "text": "The second model call reviews the answer. Its prompt contains the answer from call #1, so if #1 ever changes, this call changes too." },
-      { "call": 5, "text": "The review was written to out/review.md." },
-      { "call": 6, "text": "A notification: an external side effect. On replay it is not sent again; the recorded result is returned instead." },
-      { "text": "All of it is one small file: 7 calls and 9 snapshots of the repository, protected by a hash chain (the \"integrity verified\" chip)." }
+      { "call": 0, "text": "The model reads Dana's message and decides its first step: look up order A1042." },
+      { "call": 1, "text": "The lookup tool returns the order: a Lunar Desk Lamp, $89, delivered on 18 September." },
+      { "call": 3, "text": "The agent reads the refund policy: full refunds within 30 days of delivery, and always for damaged items." },
+      { "call": 5, "text": "With the order and the policy in hand, the model decides the refund is allowed." },
+      { "call": 6, "text": "issue_refund talks to the payment provider: $89 back to Dana. This is a real side effect. When this recording is replayed, the refund is not issued again; the recorded result comes back instead." },
+      { "call": 8, "text": "The agent emails Dana a confirmation. Also a side effect, also never repeated on replay." },
+      { "call": 10, "text": "The final reply was streamed token by token. The chart under it shows when each piece arrived." },
+      { "text": "If a customer complains tomorrow that the agent made a mistake, this recording is the exact run: replay it offline as many times as you like, for free, and fork from any call to try a better prompt." }
     ]
   },
   {
-    "file": "coding-agent-rerun.khn",
-    "title": "Same task, re-run",
-    "blurb": "The same agent and task run again live. Compare it with the first run to see where they diverge.",
-    "summary": "The same agent and the same task as Coding agent, run a second time live. Nothing in the code changed, yet the run is different: the model sampled a different answer, and everything that depends on it changed too.",
+    "file": "coding-agent.khn",
+    "title": "Coding agent: failing test, then a fix",
+    "blurb": "A real model writes code, runs real tests, sees them fail, fixes the code and passes. Watch the files change.",
+    "compare": "coding-agent-again.khn",
+    "summary": "A coding agent is asked to write to_roman(n), which turns numbers into Roman numerals. It writes solution.py, runs the real test suite with pytest, and keeps going until the tests pass. The model is qwen2.5:3b, a small model, so it stumbles the way real models do, and you can see every step and every file change.",
     "story": [
-      { "call": 0, "text": "The clock reads a different time: this was a new live run." },
-      { "call": 1, "text": "Same prompt, different answer. This is where the two runs first diverge." },
-      { "call": 4, "text": "The review prompt is different too, because it contains the answer from call #1." },
-      { "text": "Open Coding agent from Examples and press \"Compare with a re-run\": Khonsu lines the two runs up call by call and points at the first divergence and the exact JSON field." }
+      { "call": 0, "text": "The first answer describes a plan but calls no tool, so the agent reminds the model to use its tools." },
+      { "call": 1, "text": "The model calls write_file with an argument that doesn't exist (content_type). The call fails and the model is told why." },
+      { "call": 3, "text": "It writes solution.py, but only a placeholder: the function body is just pass. The workspace panel marks the file as new; click it to see the code." },
+      { "call": 5, "text": "The tests run for real and fail: to_roman(3) returned None instead of 'III'." },
+      { "call": 6, "text": "The model reads the failure and writes a real implementation. This is the moment the run turns around." },
+      { "call": 7, "text": "solution.py changes. Click it in the workspace panel to see the diff from the placeholder." },
+      { "call": 8, "text": "All three tests pass." },
+      { "call": 11, "text": "The agent writes a one-line changelog entry." },
+      { "text": "Press \"Compare with a re-run\" to see the same agent, same task, run again live, and where it went differently." }
+    ]
+  },
+  {
+    "file": "coding-agent-again.khn",
+    "title": "Same task, run again",
+    "blurb": "The identical agent and task, run a second time: it fails, and its summary claims otherwise.",
+    "summary": "Exactly the same agent, prompt and model as \"Coding agent\", run once more. Nothing changed in the code, yet this run never wrote a file: it described what it would do instead of doing it, the tests failed because solution.py didn't exist, and its final summary claims it fixed the problem. A bug like this vanishes when you try to reproduce it, unless the run was recorded.",
+    "story": [
+      { "call": 0, "text": "The very first answer already differs from the other run: the model samples differently every time." },
+      { "call": 3, "text": "The model explains how it would write the function, but its tool call never produces a file." },
+      { "call": 5, "text": "The tests fail to even start: there is no solution.py to import." },
+      { "call": 6, "text": "The summary says the problem was fixed. It wasn't. This is a real hallucination, preserved exactly." },
+      { "text": "Open \"Coding agent\" from Examples and press \"Compare with a re-run\": Khonsu lines the two runs up call by call and points at the first place they diverged." }
     ]
   },
   {
     "file": "coding-agent-fork.khn",
-    "title": "Fork at call #4",
-    "blurb": "khonsu fork: calls 0–3 replayed from the recording (hollow marks), the review regenerated live.",
-    "summary": "Made with `khonsu fork coding-agent.khn@4`: go back to call #4 of the Coding agent run and let the future play out again. The files were restored as they were at the start, calls #0–#3 came from the recording (no model, no cost), and the agent went live from #4.",
+    "title": "Fork: a new future from the failure",
+    "blurb": "khonsu fork at call #6: the first six calls come from the recording, the rest runs live.",
+    "summary": "Made with khonsu fork coding-agent.khn@6. Khonsu restored the files as they were at the start, replayed calls #0 to #5 from the original recording (no model, no cost, the same failing test), and let the model take over live from call #6, the moment it read the failure. The model tried a different fix.",
     "story": [
-      { "call": 0, "text": "Calls #0 to #3 are hollow on the dial: they were served from the original recording, byte for byte." },
-      { "call": 1, "text": "The first answer is identical to the original run's, because it was replayed rather than sampled again." },
-      { "call": 4, "text": "The fork point: from here the model was called for real, and it wrote a new review." },
-      { "call": 5, "text": "The new review was saved; compare the file with the original run's." },
-      { "call": 6, "text": "The notification was really sent this time, because it came after the fork point." },
-      { "text": "The fork is saved as its own recording that remembers its parent (see \"parent\" in the header)." }
-    ]
-  },
-  {
-    "file": "weather-agent.khn",
-    "title": "Streaming + parallel",
-    "blurb": "Tool call, a streamed answer (with chunk timing), and three concurrent requests.",
-    "summary": "A different agent that uses function calling and streaming, then fires three requests at the same time.",
-    "story": [
-      { "call": 0, "text": "The model asked the agent to call get_weather. The request, the tool-call arguments, and the model's choice are all recorded." },
-      { "call": 1, "text": "The final answer was streamed token by token. The token-stream chart shows when each chunk arrived, and replay can reproduce that timing." },
-      { "call": 2, "text": "Calls #2 to #4 were sent at the same moment. Khonsu matches requests by their content, so they replay correctly in any order." },
-      { "text": "This agent has no workspace, so the file panel is empty: recording works with or without one." }
+      { "call": 0, "text": "Calls #0 to #5 are hollow on the dial: served from the original recording, byte for byte, including the failing test." },
+      { "call": 6, "text": "The fork point. The model sees the same failure as before but writes a different solution, this time with a dictionary of numerals." },
+      { "call": 7, "text": "solution.py changes. Compare it with call #7 of the original run: a different implementation of the same function." },
+      { "call": 8, "text": "The agent ran out of rounds before testing the new code, so it goes straight to its summary. Forking lets you explore these alternatives without paying again for everything before the fork point." },
+      { "text": "The fork is saved as its own recording that remembers its parent (see the \"fork of\" chip in the header)." }
     ]
   }
 ]
