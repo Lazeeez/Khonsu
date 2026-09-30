@@ -5,6 +5,7 @@ export interface Sample {
   file: string;
   title: string;
   blurb: string;
+  compare?: string;  // a re-run of the same task, for "Compare with a re-run"
   summary?: string;
   story?: { call?: number; text: string }[];
 }
