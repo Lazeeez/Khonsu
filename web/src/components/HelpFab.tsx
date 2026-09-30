@@ -18,7 +18,7 @@ export function HelpFab({ title, steps, guide, example, onGoto }: {
 }) {
   const [open, setOpen] = useState(false);
   const [nudge, setNudge] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLElement>(null);
   const id = useId();
 
   // A new example: pulse and hint once, without opening on its own.
@@ -45,7 +45,7 @@ export function HelpFab({ title, steps, guide, example, onGoto }: {
 
   const label = example ? "What happened in this example, and how to use this page" : `How to use ${title}`;
   return (
-    <div className="fab" ref={box}>
+    <aside className="fab" ref={box} aria-label="Help">
       {open && (
         <div className="fab-panel" id={id} role="dialog" aria-label={label}>
           <button className="fab-close" onClick={() => setOpen(false)} aria-label="Close">×</button>
@@ -79,11 +79,20 @@ export function HelpFab({ title, steps, guide, example, onGoto }: {
           </section>
         </div>
       )}
-      {!open && nudge && <div className="fab-hint" aria-hidden>What happened here?</div>}
-      <button className={`fab-btn ${nudge ? "nudge" : ""} ${open ? "on" : ""}`} onClick={() => { setOpen(!open); setNudge(false); }}
-        aria-expanded={open} aria-controls={open ? id : undefined} aria-label={label} data-tip={example ? "About this example" : `How to use ${title}`}>
-        {open ? "×" : "?"}
+      <button className={`fab-btn ${nudge ? "wide" : ""} ${open ? "on" : ""}`} onClick={() => { setOpen(!open); setNudge(false); }}
+        aria-expanded={open} aria-controls={open ? id : undefined} aria-label={label}>
+        <svg className="fab-ic" viewBox="0 0 24 24" aria-hidden>
+          {open ? (
+            <path d="M7 7l10 10M17 7L7 17" />
+          ) : (
+            <>
+              <path d="M9.2 9.3a2.9 2.9 0 1 1 4.2 2.6c-.9.5-1.4 1.1-1.4 2.1v.5" />
+              <circle cx="12" cy="17.6" r=".9" className="fab-dot-i" />
+            </>
+          )}
+        </svg>
+        <span className="fab-label">{open ? "Close" : example ? "About this example" : "Help"}</span>
       </button>
-    </div>
+    </aside>
   );
 }
