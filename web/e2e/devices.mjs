@@ -50,9 +50,26 @@ for (const engine of only) {
         await page.waitForTimeout(300);
         // Touch devices: measure against the layout width (WebKit on Windows draws a classic
         // scrollbar in mobile emulation that real iOS does not have). Desktop: the client width.
-        const overflow = await page.evaluate((layout) =>
-          document.documentElement.scrollWidth - Math.max(document.documentElement.clientWidth, layout), d.touch ? d.viewport.width : 0);
-        if (overflow > 1) failures.push(`${label}: horizontal overflow ${overflow}px`);
+        const measure = () => page.evaluate((layout) => {
+          const W = Math.max(document.documentElement.clientWidth, layout);
+          const over = document.documentElement.scrollWidth - W;
+          if (over <= 1) return { over, who: [] };
+          // Name the deepest elements that stick out, so a failure says what to fix.
+          const who = [];
+          for (const el of document.querySelectorAll("body *")) {
+            const r = el.getBoundingClientRect();
+            if (r.right <= W + 1 || r.width === 0) continue;
+            if ([...el.children].some((c) => c.getBoundingClientRect().right > W + 1)) continue;
+            who.push(`${el.tagName.toLowerCase()}.${String(el.className).split(" ")[0]} (right ${Math.round(r.right)})`);
+          }
+          return { over, who: who.slice(0, 6) };
+        }, d.touch ? d.viewport.width : 0);
+        let m = await measure();
+        if (m.over > 1) {  // let late layout (canvases sizing to their container) settle, then judge
+          await page.waitForTimeout(1500);
+          m = await measure();
+        }
+        if (m.over > 1) failures.push(`${label}: horizontal overflow ${m.over}px from ${m.who.join(", ")}`);
         if (shots) await page.screenshot({ path: `${shots}/${engine}-${d.name}-${(pg.route || "landing").replace(/[^a-z]+/gi, "_")}.png` });
       } catch (e) {
         failures.push(`${label}: ${e.message.split("\n")[0]}`);
