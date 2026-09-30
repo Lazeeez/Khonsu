@@ -143,7 +143,7 @@ export function Landing() {
           </p>
           <div className="cta enter" style={delay(270)}>
             <a className="btn primary big" href="#/viewer?src=coding-agent.khn">Open a recorded run <span aria-hidden>→</span></a>
-            <a className="btn big glass" href="#/play">Fork a running program</a>
+            <a className="btn big glass" href="#/downloads">Download Khonsu</a>
           </div>
           <p className="hero-note enter" style={delay(360)}>
             New here? <a href="#/guide">Read the two-minute guide</a> first. Everything on this site runs in your browser.
