@@ -132,7 +132,7 @@ export function Bench() {
 
       <div className="panel">
         <div className="panel-h"><h2>Raw results</h2></div>
-        <div className="panel-b" style={{ overflowX: "auto" }}>
+        <div className="panel-b" style={{ overflowX: "auto" }} tabIndex={0} role="region" aria-label="Raw results table">
           <table className="data">
             <thead><tr><th>state</th><th>Khonsu fork</th><th>v1 fork</th><th>deep fork</th><th>Khonsu 1st write</th><th>v1 1st write</th><th>deep write</th></tr></thead>
             <tbody>
