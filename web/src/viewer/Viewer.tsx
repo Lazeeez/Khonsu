@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PageHelp } from "../components/PageHelp";
+import { HelpFab } from "../components/HelpFab";
 import { kernel } from "../kernel/client";
 import { fmtBytes, fmtVtime, lineDiff } from "../lib/ui";
+import { ArgsView, CodeView, JsonView, langOf } from "./CodeView";
+import { Examples, type Sample } from "./Examples";
 import { MoonDial, type DialTick } from "./MoonDial";
 import { importOtel, isOtel } from "./otel";
 import type { CallView, ExchangeInfo, FileChange, FileEntry, LoadedRun, RunDiffView } from "./types";
 
 const BASE = import.meta.env.BASE_URL;
 
-interface Sample { file: string; title: string; blurb: string }
 
 // ---------------------------------------------------------------------------------------------
 // loading
@@ -122,9 +123,11 @@ function CallDetail({ run, index }: { run: LoadedRun; index: number }) {
       <div className="call">
         {header}
         <div className="section-t">request</div>
-        <pre className="code">{JSON.stringify(call.request, null, 2)}</pre>
+        <JsonView value={call.request} />
         <div className="section-t">response</div>
-        <pre className="code">{typeof call.response?.body === "string" ? call.response.body : JSON.stringify(call.response?.body, null, 2)}</pre>
+        {typeof call.response?.body === "string"
+          ? <CodeView text={call.response.body} />
+          : <JsonView value={call.response?.body} />}
       </div>
     );
 
@@ -134,11 +137,11 @@ function CallDetail({ run, index }: { run: LoadedRun; index: number }) {
       <div className="call">
         {header}
         <div className="section-t">arguments</div>
-        <pre className="code">{JSON.stringify(call.request?.args ?? call.request, null, 2)}</pre>
+        <ArgsView args={call.request?.args ?? call.request} />
         <div className="section-t">{body?.ok === false ? "raised" : "returned"}</div>
-        <pre className={`code ${body?.ok === false ? "bad" : ""}`}>
-          {body?.ok === false ? `${body.error?.type}: ${body.error?.message}` : JSON.stringify(body?.result, null, 2)}
-        </pre>
+        {body?.ok === false
+          ? <CodeView className="bad" numbers={false} text={`${body.error?.type}: ${body.error?.message}`} />
+          : <JsonView value={body?.result} />}
         <p className="muted small">
           Recorded by <code>@khonsu.tool</code>. On replay this result is returned without re-running the tool, so side effects don't repeat.
         </p>
@@ -261,7 +264,7 @@ function Workspace({ run, index }: { run: LoadedRun; index: number }) {
       {open && openChange && openChange.before !== undefined ? (
         <DiffBlock before={openChange.before ?? ""} after={openChange.after ?? ""} />
       ) : open && content !== null ? (
-        <pre className="code">{content}</pre>
+        <CodeView text={content} lang={langOf(open)} />
       ) : null}
     </div>
   );
@@ -381,30 +384,33 @@ export function Viewer() {
     if (i >= 0) setSel(i);
   };
 
+  const example = useMemo(() => {
+    const s = a && samples.find((x) => x.file === a.name);
+    return s && s.summary && s.story ? { title: s.title, summary: s.summary, story: s.story } : null;
+  }, [a, samples]);
+
   const v = a?.view;
   const tokens = v ? v.exchanges.reduce((s, e) => s + e.prompt_tokens + e.completion_tokens, 0) : 0;
   const tools = v ? v.exchanges.filter((e) => e.tool).length : 0;
 
   return (
-    <div className={`viewer ${drag ? "dragging" : ""}`} onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+    <div className={`viewer ${drag ? "dragging" : ""}`} data-example={example ? a?.name : undefined} onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDrag(false); }} onDrop={onDrop}>
-      <input ref={fileInput} type="file" accept=".khn,.json" multiple hidden
-        onChange={(e) => e.target.files?.length && open([...e.target.files])} />
-      <PageHelp id="viewer" title="the Viewer" steps={[
-        <>Pick a sample on the right (start with <b>Coding agent</b>), or open your own <code>.khn</code> recording or OpenTelemetry trace.</>,
+      <HelpFab title="the Viewer" guide="viewer" example={example} onGoto={pickSeq} steps={[
+        <>Open <b>Examples</b> and pick a recording (start with <b>Coding agent</b>), or open your own <code>.khn</code> or OpenTelemetry trace.</>,
         <>Drag the moon around the <b>Moon Dial</b>, or use the arrow keys, to travel through the run one call at a time.</>,
         <>Read the selected call: the prompt, the answer, any tool calls, and which files that call changed.</>,
         <>Press <b>Compare with a re-run</b> to see where two runs of the same task first went different ways.</>,
       ]} />
+      <input ref={fileInput} type="file" accept=".khn,.json" multiple hidden
+        onChange={(e) => e.target.files?.length && open([...e.target.files])} />
 
       <div className="viewer-bar">
         <button className="btn primary" onClick={() => fileInput.current?.click()} disabled={busy}>Open recording…</button>
         <span className="muted small">.khn from <code>khonsu record</code>, or an OpenTelemetry GenAI trace (OTLP JSON). Nothing leaves your browser.</span>
         <span className="spacer" />
-        {samples.map((s) => (
-          <button key={s.file} className="btn ghost small" disabled={busy} title={s.blurb}
-            onClick={() => open([{ url: `${BASE}samples/${s.file}`, name: s.file }])}>{s.title}</button>
-        ))}
+        <Examples samples={samples} current={a?.name} disabled={busy}
+          onPick={(s) => open([{ url: `${BASE}samples/${s.file}`, name: s.file }])} />
       </div>
       {error && <div className="callout bad">{error}</div>}
 
