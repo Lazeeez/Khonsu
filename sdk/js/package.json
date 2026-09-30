@@ -1,8 +1,10 @@
 {
-  "name": "khonsu",
+  "name": "khonsu-sdk",
   "version": "0.3.0",
-  "description": "Record and replay AI agent tool calls with the Khonsu time-travel debugger",
+  "description": "Record and replay AI agent tool calls with Khonsu, the time-travel debugger for AI agents",
   "license": "MIT",
+  "author": "Lajat Manekar",
+  "homepage": "https://lazeeez.github.io/Khonsu/",
   "type": "module",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
@@ -14,5 +16,5 @@
   },
   "files": ["src", "README.md"],
   "engines": { "node": ">=18" },
-  "keywords": ["ai", "agents", "llm", "replay", "debugging", "testing", "openai"]
+  "keywords": ["ai", "agents", "llm", "replay", "debugging", "testing", "openai", "anthropic", "khonsu"]
 }
