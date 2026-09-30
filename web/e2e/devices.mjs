@@ -22,6 +22,7 @@ const DEVICES = [
 const PAGES = [
   { route: "", marker: "Travel back to the moment" },
   { route: "#/guide", marker: "How to use Khonsu" },
+  { route: "#/downloads", marker: "Get Khonsu" },
   { route: "#/viewer?src=coding-agent.khn", marker: "integrity verified" },
   { route: "#/play", marker: "Branch #0", then: async (p) => p.locator(".vm-out", { hasText: "opened" }).waitFor({ timeout: 30000 }) },
   { route: "#/simulator", marker: "Recorded run of issue #42" },
