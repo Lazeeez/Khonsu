@@ -1,0 +1,47 @@
+#!/bin/sh
+# Khonsu installer: downloads the CLI, verifies its SHA-256, and puts `khonsu` on your PATH.
+#   curl -fsSL @SITE@/downloads/install.sh | sh
+# Options (environment): KHONSU_PREFIX (default ~/.local)
+set -eu
+
+SITE="@SITE@"
+VERSION="@VERSION@"
+ARCHIVE="@ARCHIVE@"
+PREFIX="${KHONSU_PREFIX:-$HOME/.local}"
+
+say() { printf '\033[33m☾ khonsu\033[0m %s\n' "$*"; }
+die() { printf '\033[31mkhonsu install: %s\033[0m\n' "$*" >&2; exit 1; }
+
+[ "$(uname -s)" = "Linux" ] || die "this build is for Linux (on Windows, run it inside WSL; macOS is coming)"
+[ "$(uname -m)" = "x86_64" ] || die "this build is for x86-64; this machine is $(uname -m)"
+command -v tar >/dev/null || die "tar is required"
+if command -v curl >/dev/null; then fetch() { curl -fsSL "$1" -o "$2"; }
+elif command -v wget >/dev/null; then fetch() { wget -qO "$2" "$1"; }
+else die "curl or wget is required"; fi
+if command -v sha256sum >/dev/null; then sha() { sha256sum "$1" | cut -d' ' -f1; }
+elif command -v shasum >/dev/null; then sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+else die "sha256sum is required"; fi
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+say "downloading khonsu $VERSION"
+fetch "$SITE/downloads/$ARCHIVE" "$tmp/$ARCHIVE"
+fetch "$SITE/downloads/SHA256SUMS" "$tmp/SHA256SUMS"
+want="$(grep " $ARCHIVE\$" "$tmp/SHA256SUMS" | cut -d' ' -f1)"
+[ -n "$want" ] && [ "$(sha "$tmp/$ARCHIVE")" = "$want" ] || die "checksum mismatch: the download is corrupt or was tampered with"
+
+mkdir -p "$PREFIX/lib" "$PREFIX/bin"
+tar -C "$tmp" -xzf "$tmp/$ARCHIVE"
+dir="${ARCHIVE%.tar.gz}"
+rm -rf "$PREFIX/lib/khonsu"
+mv "$tmp/$dir" "$PREFIX/lib/khonsu"
+ln -sf "$PREFIX/lib/khonsu/bin/khonsu" "$PREFIX/bin/khonsu"
+"$PREFIX/bin/khonsu" version >/dev/null 2>&1 || die "installed, but the binary does not run here (needs glibc 2.35+)"
+
+say "installed $("$PREFIX/bin/khonsu" version) to $PREFIX/bin/khonsu"
+case ":$PATH:" in
+  *":$PREFIX/bin:"*) ;;
+  *) say "add it to your PATH:  export PATH=\"$PREFIX/bin:\$PATH\"" ;;
+esac
+say "tool SDKs:  pip install $PREFIX/lib/khonsu/sdk/*.whl   ·   npm install $PREFIX/lib/khonsu/sdk/*.tgz"
+say "start here: $SITE/#/guide"
