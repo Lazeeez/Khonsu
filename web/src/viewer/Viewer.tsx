@@ -11,6 +11,22 @@ import type { CallView, ExchangeInfo, FileChange, FileEntry, LoadedRun, RunDiffV
 const BASE = import.meta.env.BASE_URL;
 
 
+/** "__main__.lookup_order" -> "lookup_order": the module prefix is noise to a reader. */
+const toolName = (s: string) => s.replace(/(^|, )__main__\./g, "$1");
+
+/** A tool message's content: JSON-encoded results become plain text or formatted JSON. */
+function ToolResult({ content }: { content: unknown }) {
+  const text = contentText(content);
+  let value: unknown = text;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    /* not JSON: show as text */
+  }
+  if (typeof value === "string") return <div className="content">{value}</div>;
+  return <JsonView value={value} />;
+}
+
 // ---------------------------------------------------------------------------------------------
 // loading
 // ---------------------------------------------------------------------------------------------
@@ -105,7 +121,7 @@ function CallDetail({ run, index }: { run: LoadedRun; index: number }) {
     <div className="call-head">
       <Chip tone={ex.tool ? "teal" : "gold"}>{ex.tool ? "tool" : "model"}</Chip>
       <span className="mono">#{ex.seq}</span>
-      <b>{ex.tool ? ex.tool_calls : ex.model}</b>
+      <b>{ex.tool ? toolName(ex.tool_calls) : ex.model}</b>
       {ex.latency_us !== undefined && <span className="muted mono">{fmtVtime(ex.latency_us)}</span>}
       {ex.streamed && <Chip>stream</Chip>}
       {ex.from_recording && <Chip tone="teal">replayed</Chip>}
@@ -172,7 +188,9 @@ function CallDetail({ run, index }: { run: LoadedRun; index: number }) {
         {messages.map((m, i) => (
           <div key={i} className={`msg ${m.role}`}>
             <div className="role">{m.role}{m.name ? ` · ${m.name}` : ""}</div>
-            {m.content != null && m.content !== "" && <div className="content">{contentText(m.content)}</div>}
+            {m.content != null && m.content !== "" && (m.role === "tool"
+              ? <ToolResult content={m.content} />
+              : <div className="content">{contentText(m.content)}</div>)}
             {(m.tool_calls ?? []).map((t: any, j: number) => (
               <div key={j} className="toolcall">→ {t.function?.name}({t.function?.arguments})</div>
             ))}
@@ -384,6 +402,7 @@ export function Viewer() {
     if (i >= 0) setSel(i);
   };
 
+  const compareWith = samples.find((x) => x.file === a?.name)?.compare;
   const example = useMemo(() => {
     const s = a && samples.find((x) => x.file === a.name);
     return s && s.summary && s.story ? { title: s.title, summary: s.summary, story: s.story } : null;
@@ -397,10 +416,10 @@ export function Viewer() {
     <div className={`viewer ${drag ? "dragging" : ""}`} data-example={example ? a?.name : undefined} onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDrag(false); }} onDrop={onDrop}>
       <HelpFab title="the Viewer" guide="viewer" example={example} onGoto={pickSeq} steps={[
-        <>Open <b>Examples</b> and pick a recording (start with <b>Coding agent</b>), or open your own <code>.khn</code> or OpenTelemetry trace.</>,
+        <>Open <b>Examples</b> and pick a recording (start with <b>Support agent</b>), or open your own <code>.khn</code> or OpenTelemetry trace.</>,
         <>Drag the moon around the <b>Moon Dial</b>, or use the arrow keys, to travel through the run one call at a time.</>,
         <>Read the selected call: the prompt, the answer, any tool calls, and which files that call changed.</>,
-        <>Press <b>Compare with a re-run</b> to see where two runs of the same task first went different ways.</>,
+        <>On the <b>Coding agent</b> example, press <b>Compare with a re-run</b> to see where two runs of the same task first went different ways.</>,
       ]} />
       <input ref={fileInput} type="file" accept=".khn,.json" multiple hidden
         onChange={(e) => e.target.files?.length && open([...e.target.files])} />
@@ -431,7 +450,8 @@ export function Viewer() {
         <>
           <header className="run-head panel">
             <div className="run-title">
-              <h2>{a.name}</h2>
+              <h2>{example?.title ?? a.name}</h2>
+              {example && <span className="muted mono small">{a.name}</span>}
               <code className="cmd">{v!.command}</code>
             </div>
             <div className="run-chips">
@@ -454,8 +474,8 @@ export function Viewer() {
                 input.onchange = () => input.files?.length && open([input.files[0]], true);
                 input.click();
               }}>Compare with…</button>
-              {samples.length > 1 && !b && a.name === samples[0]?.file && (
-                <button className="btn small ghost" onClick={() => open([{ url: `${BASE}samples/${samples[1].file}`, name: samples[1].file }], true)}>
+              {!b && compareWith && (
+                <button className="btn small ghost" onClick={() => open([{ url: `${BASE}samples/${compareWith}`, name: compareWith }], true)}>
                   Compare with a re-run
                 </button>
               )}
@@ -464,7 +484,7 @@ export function Viewer() {
           </header>
 
           <div className="viewer-grid">
-            <aside className="panel dial-panel">
+            <aside className="panel dial-panel" aria-label="Calls in this run">
               <MoonDial ticks={ticks} value={Math.min(sel, Math.max(ticks.length - 1, 0))} onChange={setSel} />
               <div className="legend center">
                 <span><i className="dot" style={{ background: "var(--gold)" }} /> model</span>
@@ -476,7 +496,9 @@ export function Viewer() {
                   <button key={i} className={`callrow ${i === sel ? "sel" : ""}`} onClick={() => setSel(i)}>
                     <span className={`kind ${e.tool ? "tool" : "model"}`} />
                     <span className="mono seq">#{e.seq}</span>
-                    <span className="lbl">{e.tool ? e.tool_calls : e.output || e.tool_calls || e.model}</span>
+                    <span className="lbl">
+                      {e.tool ? `${toolName(e.tool_calls)}()` : e.output || (e.tool_calls ? `asks for ${e.tool_calls}` : e.model)}
+                    </span>
                     {e.workspace_changes.length > 0 && <span className="ws" title={e.workspace_changes.join(", ")}>✎{e.workspace_changes.length}</span>}
                   </button>
                 ))}
@@ -485,7 +507,7 @@ export function Viewer() {
             <section className="panel detail-panel">
               <CallDetail run={a} index={sel} />
             </section>
-            <aside className="panel ws-panel">
+            <aside className="panel ws-panel" aria-label="Workspace files">
               <Workspace run={a} index={sel} />
             </aside>
           </div>
