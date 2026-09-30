@@ -55,7 +55,8 @@ std::string text_of_content(const jsonv::Value* c) {
   std::string out;
   if (c->kind() == jsonv::Kind::Array)
     for (const auto& part : c->as_array())
-      if (part.str("type") == "text") out += std::string(part.str("text"));
+      if (const auto t = part.str("type"); t == "text" || t == "input_text" || t == "output_text")
+        out += std::string(part.str("text"));
   return out;
 }
 
@@ -216,7 +217,13 @@ std::optional<Recording> Recording::load(std::span<const std::byte> bytes, std::
         }
         break;
       case FrameType::Object:
-        if (auto o = ws::decode_object(f.payload)) rec.objects.put(o->kind, o->id, std::move(o->bytes));
+        if (auto o = ws::decode_object(f.payload)) {
+          // Content-addressed means verified: a forged or corrupt object is dropped, which also
+          // makes a tree that contains itself impossible (checkout/diff recurse through trees).
+          const Digest128 want = o->kind == ws::ObjectKind::Tree ? ws::tree_id(o->bytes) : ws::blob_id(o->bytes);
+          if (want == o->id) rec.objects.put(o->kind, o->id, std::move(o->bytes));
+          else ++rec.bad_objects;
+        }
         break;
       case FrameType::Snapshot:
         if (auto s = ws::decode_snapshot(f.payload)) rec.snapshots.push_back(*s);
@@ -266,6 +273,16 @@ ExchangeSummary summarize(const Exchange& ex, std::size_t max_chars) {
           s.last_user_message = trunc(text_of_content(it->get("content")), max_chars);
           break;
         }
+    } else if (const auto* input = req->get("input")) {  // OpenAI Responses API
+      if (input->kind() == jsonv::Kind::String) {
+        s.last_user_message = trunc(input->as_string(), max_chars);
+      } else if (input->kind() == jsonv::Kind::Array) {
+        for (auto it = input->as_array().rbegin(); it != input->as_array().rend(); ++it)
+          if (it->str("role") == "user") {
+            s.last_user_message = trunc(text_of_content(it->get("content")), max_chars);
+            break;
+          }
+      }
     } else if (const auto p = req->str("prompt"); !p.empty()) {
       s.last_user_message = trunc(p, max_chars);
     }
@@ -273,10 +290,26 @@ ExchangeSummary summarize(const Exchange& ex, std::size_t max_chars) {
   if (!ex.resp) return s;
   std::string text;
   std::vector<std::string> tools;
+  // Chat Completions: prompt/completion_tokens. Anthropic and Responses: input/output_tokens.
   auto take_usage = [&](const jsonv::Value& v) {
     if (const auto* u = v.get("usage"); u && u->kind() == jsonv::Kind::Object) {
-      if (const auto* pt = u->get("prompt_tokens")) s.prompt_tokens = to_u64(pt->as_string());
-      if (const auto* ct = u->get("completion_tokens")) s.completion_tokens = to_u64(ct->as_string());
+      for (const char* k : {"prompt_tokens", "input_tokens"})
+        if (const auto* x = u->get(k); x && x->kind() == jsonv::Kind::Number) s.prompt_tokens = to_u64(x->as_string());
+      for (const char* k : {"completion_tokens", "output_tokens"})
+        if (const auto* x = u->get(k); x && x->kind() == jsonv::Kind::Number) s.completion_tokens = to_u64(x->as_string());
+    }
+  };
+  auto add_tool = [&](std::string_view n) {
+    if (!n.empty() && std::find(tools.begin(), tools.end(), n) == tools.end()) tools.emplace_back(n);
+  };
+  // Anthropic `content` blocks / Responses `output` items: text and tool calls.
+  auto take_blocks = [&](const jsonv::Value* blocks) {
+    if (!blocks || blocks->kind() != jsonv::Kind::Array) return;
+    for (const auto& b : blocks->as_array()) {
+      const auto type = b.str("type");
+      if (type == "text" || type == "output_text") text += std::string(b.str("text"));
+      else if (type == "tool_use" || type == "function_call") add_tool(b.str("name"));
+      else if (type == "message") text += text_of_content(b.get("content"));
     }
   };
   auto take_tools = [&](const jsonv::Value* calls) {
@@ -300,11 +333,25 @@ ExchangeSummary summarize(const Exchange& ex, std::size_t max_chars) {
       while (!line.empty() && line.front() == ' ') line.remove_prefix(1);
       if (line == "[DONE]") continue;
       if (auto ev = jsonv::parse(line)) {
-        if (const auto* ch = ev->get("choices"); ch && ch->at(0))
+        const auto type = ev->str("type");
+        if (const auto* ch = ev->get("choices"); ch && ch->at(0)) {
           if (const auto* d = ch->at(0)->get("delta")) {
             text += text_of_content(d->get("content"));
             take_tools(d->get("tool_calls"));
           }
+        } else if (type == "content_block_delta") {  // Anthropic
+          if (const auto* d = ev->get("delta")) text += std::string(d->str("text"));
+        } else if (type == "content_block_start") {
+          if (const auto* b = ev->get("content_block"); b && b->str("type") == "tool_use") add_tool(b->str("name"));
+        } else if (type == "message_start") {
+          if (const auto* m = ev->get("message")) take_usage(*m);
+        } else if (type == "response.output_text.delta") {  // OpenAI Responses
+          if (const auto* d = ev->get("delta"); d && d->kind() == jsonv::Kind::String) text += d->as_string();
+        } else if (type == "response.output_item.added") {
+          if (const auto* it = ev->get("item"); it && it->str("type") == "function_call") add_tool(it->str("name"));
+        } else if (type == "response.completed") {
+          if (const auto* r = ev->get("response")) take_usage(*r);
+        }
         take_usage(*ev);
       }
     }
@@ -316,6 +363,10 @@ ExchangeSummary summarize(const Exchange& ex, std::size_t max_chars) {
       } else {
         text = std::string(ch->at(0)->str("text"));
       }
+    } else if (resp->get("content")) {  // Anthropic Messages
+      take_blocks(resp->get("content"));
+    } else if (resp->get("output")) {   // OpenAI Responses
+      take_blocks(resp->get("output"));
     }
     take_usage(*resp);
   }
@@ -362,7 +413,7 @@ const Exchange* Recording::exchange(std::uint64_t seq) const {
   return nullptr;
 }
 
-const Exchange* ReplayIndex::take(const Digest128& key, std::string_view canonical, Miss* miss) {
+const Exchange* ReplayIndex::take(const Digest128& key, std::string_view canonical, Miss* miss, std::string_view path) {
   std::lock_guard lock(mu_);
   if (const auto it = by_key_.find(key); it != by_key_.end()) {
     std::size_t& n = next_[key];
@@ -375,13 +426,27 @@ const Exchange* ReplayIndex::take(const Digest128& key, std::string_view canonic
   }
   if (miss) {
     *miss = {};
-    // The recording's expectation: the earliest exchange not yet served.
-    const auto first = std::find(used_.begin(), used_.end(), false);
-    if (first != used_.end()) {
-      const Exchange& exp = rec_.exchanges[static_cast<std::size_t>(first - used_.begin())];
+    // The recording's expectation: the earliest unserved exchange of the same kind, so a
+    // changed model request is compared with a model request, and a tool with that tool.
+    const auto b = jsonv::parse(canonical);
+    const std::string_view tool = b && path == kToolPath ? b->str("name") : std::string_view();
+    std::size_t pick = used_.size(), any = used_.size();
+    for (std::size_t i = 0; i < used_.size() && pick == used_.size(); ++i) {
+      if (used_[i]) continue;
+      if (any == used_.size()) any = i;
+      const Request& q = rec_.exchanges[i].req;
+      if (path.empty() || q.path != path) continue;
+      if (!tool.empty()) {
+        const auto qv = jsonv::parse(q.body);
+        if (!qv || qv->str("name") != tool) continue;
+      }
+      pick = i;
+    }
+    if (pick == used_.size()) pick = any;
+    if (pick != used_.size()) {
+      const Exchange& exp = rec_.exchanges[pick];
       miss->expected_seq = exp.req.seq;
       const auto a = jsonv::parse(exp.req.body);
-      const auto b = jsonv::parse(canonical);
       if (a && b) {
         miss->field_path = jsonv::first_difference(*a, *b);
         miss->expected_value = render(resolve(*a, miss->field_path));
