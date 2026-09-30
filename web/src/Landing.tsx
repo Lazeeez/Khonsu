@@ -126,13 +126,13 @@ function useHeroMotion(hero: React.RefObject<HTMLElement | null>, dial: React.Re
 }
 
 export function Landing() {
-  const root = useRef<HTMLElement>(null);
+  const root = useRef<HTMLDivElement>(null);
   const hero = useRef<HTMLElement>(null);
   const dial = useRef<HTMLDivElement>(null);
   useReveal(root);
   useHeroMotion(hero, dial);
   return (
-    <main className="landing" ref={root}>
+    <div className="landing" ref={root}>
       <section className="hero" ref={hero}>
         <div className="hero-copy">
           <p className="eyebrow enter" style={delay(0)}>Khonsu · the traveller</p>
@@ -142,7 +142,7 @@ export function Landing() {
             bit-exactly, inspect any moment, and fork a new future from it. Free, local, and it works with any framework.
           </p>
           <div className="cta enter" style={delay(270)}>
-            <a className="btn primary big" href="#/viewer?src=coding-agent.khn">Open a recorded run <span aria-hidden>→</span></a>
+            <a className="btn primary big" href="#/viewer?src=support-agent.khn">Open a recorded run <span aria-hidden>→</span></a>
             <a className="btn big glass" href="#/downloads">Download Khonsu</a>
           </div>
           <p className="hero-note enter" style={delay(360)}>
@@ -150,7 +150,6 @@ export function Landing() {
           </p>
         </div>
         <div className="hero-dial moonrise" ref={dial}>
-          <div className="rays" aria-hidden />
           <div className="tilt">
             <HeroDial ticks={HERO_TICKS} />
           </div>
@@ -199,6 +198,6 @@ export function Landing() {
         <span>Khonsu (<span className="glyphs" lang="egy">𓐍𓈖𓋴𓅱</span>) is the Egyptian god of the moon, whose name means <i>traveller</i>.</span>
         <span className="muted">Nothing you open here leaves your machine.</span>
       </footer>
-    </main>
+    </div>
   );
 }
