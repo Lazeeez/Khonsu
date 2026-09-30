@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "khonsu"
+name = "khonsu-sdk"  # imported as `khonsu`
 version = "0.3.0"
 description = "Time-travel debugger for AI agents: record, replay and fork agent runs (Python SDK)"
 readme = "README.md"
@@ -16,8 +16,16 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Topic :: Software Development :: Debuggers",
   "Topic :: Software Development :: Testing",
+  "Framework :: Pytest",
+  "Operating System :: OS Independent",
+  "Development Status :: 4 - Beta",
 ]
 dependencies = []  # standard library only
+
+[project.urls]
+Homepage = "https://lazeeez.github.io/Khonsu/"
+Documentation = "https://lazeeez.github.io/Khonsu/#/guide"
+Download = "https://lazeeez.github.io/Khonsu/#/downloads"
 
 [tool.setuptools.packages.find]
 where = ["src"]
