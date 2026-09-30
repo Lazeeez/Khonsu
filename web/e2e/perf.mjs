@@ -40,7 +40,7 @@ for (const [label, vp] of [["desktop", { width: 1440, height: 900 }], ["phone", 
   await page.goto(base, { waitUntil: "load" });
   await page.waitForTimeout(500);
   const { fcp, jsBytes } = await page.evaluate(() => ({
-    fcp: performance.getEntriesByName("first-contentful-paint")[0]?.startTime ?? -1,
+    fcp: performance.getEntriesByType("paint").find((e) => e.name === "first-contentful-paint")?.startTime ?? -1,
     // what the landing page itself loaded (idle prefetches of other pages start later)
     jsBytes: performance.getEntriesByType("resource")
       .filter((e) => e.initiatorType === "script" && e.startTime < 400)
@@ -64,7 +64,7 @@ for (const [label, vp] of [["desktop", { width: 1440, height: 900 }], ["phone", 
   for (const [name, route, prep] of [
     ["landing", "", null],
     ["guide", "#/guide", null],
-    ["viewer", "#/viewer?src=coding-agent.khn", "integrity verified"],
+    ["viewer", "#/viewer?src=support-agent.khn", "integrity verified"],
     ["play (VM running)", "#/play", "Branch #0"],
     ["simulator", "#/simulator", "Recorded run of issue #42"],
   ]) {
