@@ -20,7 +20,7 @@ The tag starts **Actions → Release** (`.github/workflows/release.yml`):
    - then the tests: no source paths in the binary, a checksum-verified install, and the integration suite run against the installed copy.
 3. **Creates the GitHub Release**, with the downloads attached, install instructions, and notes GitHub writes from the commits since the previous tag. Pre-releases are marked as such.
 4. **Publishes the Python SDK to PyPI** as [`khonsu-sdk`](https://pypi.org/project/khonsu-sdk/) (imported as `khonsu`) (once set up, below).
-5. **Publishes the JavaScript SDK to npm** as [`khonsu-sdk`](https://www.npmjs.com/package/khonsu-sdk) (once set up, below). Pre-releases go under the `next` dist-tag, so `npm install khonsu-sdk` keeps giving the latest stable version.
+5. **Publishes the JavaScript SDK to npm** as [`khonsu-sdk`](https://www.npmjs.com/package/khonsu-sdk) (trusted publishing, set up below). Pre-releases go under the `next` dist-tag, so `npm install khonsu-sdk` keeps giving the latest stable version.
 
 Steps 4 and 5 skip themselves with a notice until they are configured, so the GitHub Release always works. Publishing a version twice is skipped, not an error. The website's Downloads page is rebuilt from `main` on every push. It switches to the short `pip install khonsu-sdk` and `npm install khonsu-sdk` commands automatically once those versions are live.
 
@@ -43,12 +43,20 @@ The next release creates the project on PyPI and publishes it.
 
 ## One-time setup: npm
 
-1. Create an account at <https://www.npmjs.com> and turn on two-factor authentication.
-2. **Access Tokens → Generate New Token → Granular Access Token**:
-   - Packages and scopes: **Read and write**, all packages (the package doesn't exist until the first publish). After the first release you can narrow it to `khonsu-sdk`.
-   - Allow it to publish without two-factor prompts, so automation can use it.
-   - Expiration: the longest npm allows for a token that can publish (90 days). Put a reminder in your calendar to replace it before then: generate a new token and update the `NPM_TOKEN` secret.
-3. In this repository: **Settings → Secrets and variables → Actions → Secrets → New repository secret**: `NPM_TOKEN` = the token.
+npm also uses *trusted publishing*, so no token is stored and nothing expires. It can only be set up on a package that already exists; `khonsu-sdk` does.
+
+1. Sign in at <https://www.npmjs.com> (two-factor authentication on) and open the [`khonsu-sdk`](https://www.npmjs.com/package/khonsu-sdk) package.
+2. **Settings → Trusted Publisher → GitHub Actions**:
+   - Organization or user: `Lazeeez`
+   - Repository: `Khonsu`
+   - Workflow filename: `release.yml`
+   - Environment name: `npm`
+
+   Then **Set up connection**.
+3. Same page, **Publishing access**: choose **Require two-factor authentication and disallow tokens**. From then on, only this workflow (and you, with 2FA) can publish.
+4. In this repository: **Settings → Secrets and variables → Actions → Variables → New repository variable**: `PUBLISH_NPM` = `true`.
+
+Trusted publishing needs npm 11.5.1 or newer; the workflow installs it. Because this repository is private, npm doesn't attach provenance attestations (it only does that for public source), but the publish itself is authenticated the same way.
 
 ## Finishing or repairing a release
 
