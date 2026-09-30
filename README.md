@@ -86,11 +86,12 @@ $ khonsu diff yesterday.khn today.khn
 
 ## See a run in your browser
 
-**[Open the viewer →](https://lazeeez.github.io/Khonsu/#/viewer?src=coding-agent.khn)** Drop any `.khn`, or an **OpenTelemetry GenAI trace** (OTLP JSON from OpenLLMetry, OpenLIT, Langfuse, Phoenix…). It is parsed by the same C++ kernel, compiled to WebAssembly, so nothing leaves your machine.
+**[Open the viewer →](https://lazeeez.github.io/Khonsu/#/viewer?src=support-agent.khn)** Drop any `.khn`, or an **OpenTelemetry GenAI trace** (OTLP JSON from OpenLLMetry, OpenLIT, Langfuse, Phoenix…). It is parsed by the same C++ kernel, compiled to WebAssembly, so nothing leaves your machine.
 
 - **The Moon Dial**: the run is an orbit, each call a point on it, and the moon waxes as you travel from the first call to the last. Drag, click, or use the arrow keys.
 - **Every call in full**: the prompt as a transcript, the response, tool calls, and stream chunk timing.
 - **The workspace at that moment**: files before the call, and a diff of exactly what the call changed.
+- **Real examples**: a support agent handling a refund, and a coding agent that fails a test and fixes it (plus a re-run and a fork), all recorded from qwen2.5:3b by `scripts/make_samples.py`. Each opens with the story of what happened.
 - **Compare two runs**: the aligned run diff, with the first divergence explained.
 - **Integrity at a glance**: hash chain verified, torn tails recovered, forks linked to their parent.
 
