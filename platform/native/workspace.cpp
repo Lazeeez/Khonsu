@@ -285,17 +285,28 @@ bool checkout_tree(const ws::ObjectMap& m, const Digest128& id, const std::strin
     if (error) *error = dir + ": " + std::strerror(errno);
     return false;
   }
+  std::vector<std::string_view> seen;
   for (const auto& e : *entries) {
     const std::string path = dir + "/" + e.name;
     const std::string r = rel.empty() ? e.name : rel + "/" + e.name;
-    if (e.name.find('/') != std::string::npos || e.name == ".." || e.name == ".") {
-      if (error) *error = "refusing unsafe entry name: " + e.name;  // no path traversal via crafted recordings
+    // No path traversal via crafted recordings: no separators, no dot names, no duplicates
+    // (a symlink "x" followed by a directory "x" would otherwise write through the link).
+    if (e.name.empty() || e.name.find('/') != std::string::npos || e.name.find('\0') != std::string::npos ||
+        e.name == ".." || e.name == "." || std::find(seen.begin(), seen.end(), e.name) != seen.end()) {
+      if (error) *error = "refusing unsafe entry name: " + e.name;
       return false;
     }
+    seen.push_back(e.name);
     switch (e.type) {
-      case ws::EntryType::Dir:
+      case ws::EntryType::Dir: {
+        struct stat st {};
+        if (::lstat(path.c_str(), &st) == 0 && S_ISLNK(st.st_mode)) {
+          if (error) *error = "refusing to write through the symlink " + path;
+          return false;
+        }
         if (!checkout_tree(m, e.id, path, skipped, r, error)) return false;
         break;
+      }
       case ws::EntryType::Omitted:
         if (skipped) skipped->push_back(r);
         break;
