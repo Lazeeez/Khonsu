@@ -334,7 +334,7 @@ export function Simulator() {
           <>Click any dot to inspect that moment on the right. Use the scrubber, <b>⑂ Fork</b> or <b>✎ Inject</b> to branch it yourself.</>,
         ]} />
       <SimHud />
-      <main className="main">
+      <div className="main">
         <section className="panel multiverse">
           <div className="panel-h">
             <h2>Timeline multiverse</h2>
@@ -422,7 +422,7 @@ export function Simulator() {
             </div>
           </section>
         </div>
-      </main>
+      </div>
 
       {injectOpen && (
         <InjectDialog
@@ -432,7 +432,7 @@ export function Simulator() {
         />
       )}
 
-      <div className="toast-stack">
+      <div className="toast-stack" role="status" aria-live="polite">
         {toasts.map((t) => <div key={t.id} className={`toast ${t.kind ?? ""}`}>{t.msg}</div>)}
       </div>
     </>
