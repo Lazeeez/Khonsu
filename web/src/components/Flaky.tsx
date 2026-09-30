@@ -18,8 +18,6 @@ interface Study {
   };
 }
 
-const REPO_URL: string | undefined = import.meta.env.VITE_REPO_URL;
-
 function Phase({ o, replay, same }: { o: Outcome; replay?: boolean; same?: boolean }) {
   const label = `${o.passed ? "tests passed" : "tests failed"}${replay ? (same ? ", identical to the recorded run" : ", differs") : ""}`;
   return <span className={`phase ${o.passed ? "pass" : "fail"} ${replay ? "replay" : ""}`} role="img" aria-label={label} title={label} />;
@@ -51,8 +49,7 @@ export function Flaky() {
         <p className="lede">
           Khonsu's replays of the first run never moved: <b className="gold-t">{a.replays_identical_to_recording} of {a.replays_total}</b>{" "}
           were identical, with the model server switched off.{" "}
-          {REPO_URL ? <a href={`${REPO_URL}/blob/main/docs/RESULTS.md`} target="_blank" rel="noreferrer">How this was measured →</a>
-            : <a href="#/bench">All results →</a>}
+          <a href="#/bench">See every result →</a>
         </p>
       </div>
       <div className="flaky-grid" role="table" aria-label="Test outcome per run">
