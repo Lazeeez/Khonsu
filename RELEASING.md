@@ -47,7 +47,7 @@ The next release creates the project on PyPI and publishes it.
 2. **Access Tokens → Generate New Token → Granular Access Token**:
    - Packages and scopes: **Read and write**, all packages (the package doesn't exist until the first publish). After the first release you can narrow it to `khonsu-sdk`.
    - Allow it to publish without two-factor prompts, so automation can use it.
-   - Expiration: up to a year. Put a reminder in your calendar to rotate it.
+   - Expiration: the longest npm allows for a token that can publish (90 days). Put a reminder in your calendar to replace it before then: generate a new token and update the `NPM_TOKEN` secret.
 3. In this repository: **Settings → Secrets and variables → Actions → Secrets → New repository secret**: `NPM_TOKEN` = the token.
 
 ## Re-running a release
