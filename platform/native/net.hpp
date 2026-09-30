@@ -36,7 +36,9 @@ bool parse_url(std::string_view url, Endpoint& out, std::string* error);
 [[nodiscard]] std::string to_string(const Endpoint& e);
 
 // Connects (with TLS + certificate/hostname verification when e.tls).
-std::unique_ptr<Stream> connect(const Endpoint& e, int timeout_ms, std::string* error);
+// `timeout_ms` bounds the TCP connect; `io_timeout_ms` (default: the same) bounds each read/write
+// afterwards, so an unreachable host fails fast while a slow model can still think for minutes.
+std::unique_ptr<Stream> connect(const Endpoint& e, int timeout_ms, std::string* error, int io_timeout_ms = -1);
 [[nodiscard]] bool tls_available();
 
 class Listener {
