@@ -210,10 +210,12 @@ export function Guide() {
               points your agent at it through <code>OPENAI_BASE_URL</code>, and writes the recording. Your agent's code does
               not change.
             </p>
-            <h3>1. Get the command</h3>
-            <p>Khonsu builds from source on Linux (and Windows through WSL) with CMake and a C++23 compiler:</p>
-            <Code>{`cmake --preset native && cmake --build --preset native
-export PATH="$PWD/build/native:$PATH"     # now \`khonsu\` is on your PATH`}</Code>
+            <h3>1. Install</h3>
+            <p>
+              On Linux, or on Windows inside WSL, one command downloads Khonsu, verifies its checksum and puts it on your
+              PATH. The <a href="#/downloads">Download</a> page has the files, checksums and SDKs.
+            </p>
+            <Code>{`curl -fsSL ${location.origin}${import.meta.env.BASE_URL}downloads/install.sh | sh`}</Code>
             <h3>2. Record a run</h3>
             <Code>{`khonsu record -- python agent.py
 # ☾ khonsu recorded 7 calls (5 tools) · 9 workspace snapshots → .khonsu/runs/run-….khn`}</Code>
