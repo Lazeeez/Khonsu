@@ -9,12 +9,14 @@ import { Landing } from "./Landing";
 // click almost never waits on the network.
 const loaders = {
   guide: () => import("./guide/Guide").then((m) => ({ default: m.Guide })),
+  downloads: () => import("./downloads/Downloads").then((m) => ({ default: m.Downloads })),
   viewer: () => import("./viewer/Viewer").then((m) => ({ default: m.Viewer })),
   play: () => import("./play/Play").then((m) => ({ default: m.Play })),
   simulator: () => import("./Simulator").then((m) => ({ default: m.Simulator })),
   bench: () => import("./components/Bench").then((m) => ({ default: m.Bench })),
 };
 const Guide = lazy(loaders.guide);
+const Downloads = lazy(loaders.downloads);
 const Viewer = lazy(loaders.viewer);
 const Play = lazy(loaders.play);
 const Simulator = lazy(loaders.simulator);
@@ -24,6 +26,7 @@ type Route = "home" | keyof typeof loaders;
 
 function routeOf(hash: string): Route {
   if (hash.startsWith("#/guide")) return "guide";
+  if (hash.startsWith("#/downloads")) return "downloads";
   if (hash.startsWith("#/viewer")) return "viewer";
   if (hash.startsWith("#/play")) return "play";
   if (hash.startsWith("#/simulator")) return "simulator";
@@ -53,7 +56,7 @@ export default function App() {
   useEffect(() => {
     const idle = (cb: () => void) =>
       "requestIdleCallback" in window ? requestIdleCallback(cb, { timeout: 4000 }) : setTimeout(cb, 2500);
-    const id = idle(() => (["guide", "viewer", "play", "bench", "simulator"] as Route[]).forEach(prefetch));
+    const id = idle(() => (["guide", "downloads", "viewer", "play", "bench", "simulator"] as Route[]).forEach(prefetch));
     return () => ("cancelIdleCallback" in window ? cancelIdleCallback(id as number) : clearTimeout(id as number));
   }, []);
 
@@ -82,12 +85,14 @@ export default function App() {
           {link("play", "Play")}
           {link("simulator", "Simulator")}
           {link("bench", "Benchmarks")}
+          {link("downloads", "Download")}
         </nav>
       </header>
       <Suspense fallback={<MoonLoader />}>
         <div className="route" key={route}>
           {route === "home" && <Landing />}
           {route === "guide" && <Guide />}
+          {route === "downloads" && <Downloads />}
           {route === "viewer" && <Viewer />}
           {route === "play" && <Play />}
           {route === "simulator" && <Simulator />}
