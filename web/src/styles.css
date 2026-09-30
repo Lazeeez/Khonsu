@@ -10,7 +10,7 @@
   --line-2: #2a3d6b;
   --text: #e6e3d8;
   --text-2: #9aa3bd;
-  --text-3: #66708f;
+  --text-3: #8a93b0;  /* 5.9:1 on --bg: readable body text (WCAG AA) */
   --gold: #e9b949;
   --gold-2: #fbe3a1;
   --faience: #3cc8b4;
@@ -691,18 +691,14 @@ a:hover { text-decoration: none; }
 @media (max-width: 760px) { .scrub { flex: 1 1 100%; min-width: 0; } }
 
 /* ======================================================================================
-   Cinema: film grain and vignette, moonrise, light rays, tilt and scroll drift.
+   Cinema: film grain and vignette, moonrise, tilt and scroll drift.
    Everything moves by transform or opacity only; nothing animates layout or paint-heavy
    properties, and the whole layer is off for prefers-reduced-motion.
    ====================================================================================== */
 .film { position: fixed; inset: 0; z-index: 30; pointer-events: none; overflow: hidden; }
-.film::before { content: ""; position: absolute; inset: -120px; opacity: .055;
+.film::before { content: ""; position: absolute; inset: 0; opacity: .05;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-  animation: grain 1s steps(6) infinite; will-change: transform; }
-@keyframes grain {
-  0% { transform: translate3d(0, 0, 0); } 17% { transform: translate3d(-40px, 25px, 0); } 33% { transform: translate3d(30px, -35px, 0); }
-  50% { transform: translate3d(-25px, -15px, 0); } 67% { transform: translate3d(45px, 30px, 0); } 83% { transform: translate3d(-10px, 45px, 0); }
-  100% { transform: translate3d(0, 0, 0); } }
+  }  /* static: animating a full-screen grain layer recomposites the whole screen every step */
 .film::after { content: ""; position: absolute; inset: 0;
   background: radial-gradient(ellipse 120% 90% at 50% 45%, transparent 55%, rgba(2, 5, 14, .55) 100%); }
 
@@ -712,13 +708,6 @@ a:hover { text-decoration: none; }
 .hero-dial .tilt { position: relative; transform-style: preserve-3d;
   transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translate3d(0, calc(var(--scroll, 0) * -50px), 0);
   transition: transform .8s var(--ease); }
-.rays { position: absolute; left: 50%; top: 45%; width: 125%; aspect-ratio: 1; pointer-events: none; z-index: 0;
-  transform: translate(-50%, -50%);
-  background: repeating-conic-gradient(from 0deg, rgba(233, 185, 73, .075) 0deg 3deg, transparent 3deg 17deg);
-  -webkit-mask-image: radial-gradient(circle, #000 18%, transparent 62%); mask-image: radial-gradient(circle, #000 18%, transparent 62%);
-  animation: rays 120s linear infinite, raysin 3s var(--ease) both; }
-@keyframes rays { to { transform: translate(-50%, -50%) rotate(360deg); } }
-@keyframes raysin { from { opacity: 0; } to { opacity: 1; } }
 
 
 /* ---- the moon loader ---------------------------------------------------------------- */
@@ -813,10 +802,10 @@ a:hover { text-decoration: none; }
   .g-table td code { white-space: normal; overflow-wrap: anywhere; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .film::before, .rays, .moonrise, .ml-surface, .ml-shadow, .ml-halo { animation: none !important; }
+  .moonrise, .ml-surface, .ml-shadow, .ml-halo { animation: none !important; }
   .hero-copy, .hero-dial .tilt { transform: none !important; opacity: 1 !important; }
 }
-.landing { overflow-x: hidden; overflow-x: clip; }  /* the light rays are wider than the moon on purpose */
+.landing { overflow-x: hidden; overflow-x: clip; }
 .guide { grid-template-columns: minmax(0, 1fr); }  /* a nowrap tab strip must scroll inside itself, not widen the page */
 .g-layout, .g-body, .g-toc { min-width: 0; }
 .g-body, .g-steps, .g-tour > *, .g-two > * { min-width: 0; }
@@ -826,23 +815,22 @@ a:hover { text-decoration: none; }
 
 /* ---- the floating "?" ------------------------------------------------------------------ */
 .fab { position: fixed; right: 20px; bottom: 20px; z-index: 40; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
-.fab-btn { width: 52px; height: 52px; border-radius: 50%; border: 0; cursor: pointer; position: relative;
-  font: 700 22px/1 var(--display); color: #1b1407; background: radial-gradient(circle at 35% 30%, #fff1c9, var(--gold) 60%, #b98a2c);
-  box-shadow: 0 0 0 1px rgba(255, 236, 190, .5), 0 10px 30px rgba(0, 0, 0, .45), 0 0 26px rgba(233, 185, 73, .35);
-  transition: transform .3s var(--ease), box-shadow .3s var(--ease); }
-.fab-btn:hover { transform: translateY(-2px) scale(1.04); box-shadow: 0 0 0 1px rgba(255, 236, 190, .7), 0 14px 36px rgba(0, 0, 0, .5), 0 0 34px rgba(233, 185, 73, .5); }
-.fab-btn.on { background: var(--surface-3); color: var(--gold-2); box-shadow: 0 0 0 1px rgba(233, 185, 73, .5), 0 10px 30px rgba(0, 0, 0, .45); }
-.fab-btn::after { content: attr(data-tip); position: absolute; right: calc(100% + 12px); top: 50%; white-space: nowrap; pointer-events: none;
-  font: 500 12.5px/1 var(--sans); color: var(--text); background: rgba(8, 14, 32, .95); border: 1px solid var(--line-2);
-  padding: 8px 11px; border-radius: 9px; opacity: 0; transform: translate(6px, -50%); transition: opacity .25s var(--ease), transform .25s var(--ease); }
-@media (hover: hover) { .fab-btn:not(.on):hover::after { opacity: 1; transform: translate(0, -50%); } }
-.fab-btn.nudge { animation: fab-pulse 1.6s var(--ease-io) 3; }
-@keyframes fab-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
-.fab-btn.nudge::before { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid rgba(233, 185, 73, .6);
-  animation: fab-ring 1.6s var(--ease) 3; pointer-events: none; }
-@keyframes fab-ring { from { opacity: .9; transform: scale(.9); } to { opacity: 0; transform: scale(1.5); } }
-.fab-hint { font-size: 12.5px; color: var(--gold-2); background: rgba(8, 14, 32, .95); border: 1px solid rgba(233, 185, 73, .4);
-  padding: 7px 11px; border-radius: 10px; animation: rise .5s var(--ease) both; }
+.fab-btn { height: 46px; min-width: 46px; padding: 0 12px; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center;
+  justify-content: center; gap: 0; color: var(--gold-2); background: rgba(10, 18, 42, .88); border: 1px solid rgba(233, 185, 73, .42);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .06);
+  transition: border-color .3s var(--ease), box-shadow .3s var(--ease), transform .3s var(--ease), background-color .3s var(--ease); }
+.fab-ic { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.fab-ic .fab-dot-i { fill: currentColor; stroke: none; }
+.fab-label { max-width: 0; overflow: hidden; white-space: nowrap; opacity: 0; font: 600 13px/1 var(--sans); color: var(--text);
+  transition: max-width .45s var(--ease), opacity .3s var(--ease), margin .45s var(--ease); }
+.fab-btn.wide .fab-label, .fab-btn.on .fab-label { max-width: 200px; opacity: 1; margin-left: 8px; }
+@media (hover: hover) {
+  .fab-btn:hover { border-color: var(--gold); transform: translateY(-2px); box-shadow: 0 14px 34px rgba(0, 0, 0, .5), 0 0 22px rgba(233, 185, 73, .22); }
+  .fab-btn:hover .fab-label { max-width: 200px; opacity: 1; margin-left: 8px; }
+}
+.fab-btn.on { border-color: var(--gold); background: rgba(18, 30, 64, .96); }
+.fab-btn.wide { border-color: var(--gold); animation: fab-glow 1.8s var(--ease-io) 3; }
+@keyframes fab-glow { 50% { box-shadow: 0 10px 28px rgba(0, 0, 0, .45), 0 0 0 6px rgba(233, 185, 73, .14), 0 0 28px rgba(233, 185, 73, .3); } }
 .fab-panel { position: relative; width: min(400px, calc(100vw - 40px)); max-height: min(72vh, 640px); overflow: auto; overscroll-behavior: contain;
   border-radius: 16px; border: 1px solid rgba(233, 185, 73, .3); padding: 18px 18px 14px;
   background: linear-gradient(180deg, rgba(18, 30, 64, .98), rgba(8, 14, 34, .98)); box-shadow: 0 24px 70px rgba(0, 0, 0, .55);
@@ -865,7 +853,7 @@ a:hover { text-decoration: none; }
 .fab-n { flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700;
   color: var(--gold); border: 1px solid rgba(233, 185, 73, .45); }
 .fab-more { display: inline-block; margin-top: 12px; font-size: 12.5px; }
-@media (max-width: 560px) { .fab { right: 14px; bottom: 14px; } .fab-btn { width: 48px; height: 48px; } }
+@media (max-width: 560px) { .fab { right: 14px; bottom: 14px; } }
 
 /* ---- viewer: examples menu --------------------------------------------------------------- */
 .examples { position: relative; }
@@ -932,3 +920,12 @@ a:hover { text-decoration: none; }
   .dl-file .btn { width: 100%; justify-content: center; }
 }
 @media (max-width: 560px) { .dl { padding: 20px 16px 60px; } }
+
+/* ---- accessibility ---------------------------------------------------------------------------- */
+/* inline links are underlined, not told apart by colour alone */
+p a, li a, dd a, .hero-note a, .lede a { text-decoration: underline; text-decoration-color: rgba(233, 185, 73, .55); text-underline-offset: 3px; }
+p a:hover, li a:hover, dd a:hover { text-decoration-color: var(--gold); }
+.g-flow-h { margin: 10px 0 4px; font-family: var(--display); color: var(--gold-2); font-size: 16px; font-weight: 600; }
+.callrow.sel .seq { color: var(--gold-2); }
+.skip { position: absolute; left: 12px; top: -60px; z-index: 100; padding: 8px 12px; border-radius: 8px; background: var(--gold); color: #1b1407; font-weight: 600; }
+.skip:focus { top: 12px; }
