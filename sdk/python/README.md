@@ -1,6 +1,13 @@
-# khonsu (Python SDK)
+# khonsu-sdk (Python)
 
 The companion to the `khonsu` CLI, a time-travel debugger for AI agents.
+
+```sh
+pip install khonsu-sdk      # then: import khonsu
+curl -fsSL https://lazeeez.github.io/Khonsu/downloads/install.sh | sh    # the khonsu CLI (Linux, or Windows via WSL)
+```
+
+Guide, examples and downloads: **https://lazeeez.github.io/Khonsu/**
 
 Model calls are recorded by the CLI's proxy with no code changes. This package adds one decorator for **tool side effects**:
 
