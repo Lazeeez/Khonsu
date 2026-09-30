@@ -60,7 +60,10 @@ for (const engine of only) {
             const r = el.getBoundingClientRect();
             if (r.right <= W + 1 || r.width === 0) continue;
             if ([...el.children].some((c) => c.getBoundingClientRect().right > W + 1)) continue;
-            who.push(`${el.tagName.toLowerCase()}.${String(el.className).split(" ")[0]} (right ${Math.round(r.right)})`);
+            const path = [];
+            for (let n = el; n && n !== document.body && path.length < 4; n = n.parentElement)
+              path.unshift(`${n.tagName.toLowerCase()}${n.className && typeof n.className === "string" ? "." + n.className.trim().split(/\s+/).join(".") : ""}`);
+            who.push(`${path.join(" > ")} "${(el.textContent || "").trim().slice(0, 40)}" (right ${Math.round(r.right)})`);
           }
           return { over, who: who.slice(0, 6) };
         }, d.touch ? d.viewport.width : 0);
