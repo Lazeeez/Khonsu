@@ -84,7 +84,7 @@ export const CodeView = memo(function CodeView({ text, lang = "text", numbers = 
     return ls.length > 4000 ? ls.slice(0, 4000).concat([`… ${ls.length - 4000} more lines`]) : ls;
   }, [text]);
   return (
-    <pre className={`codeview ${numbers ? "numbered" : ""} ${className}`} data-lang={lang}>
+    <pre className={`codeview ${numbers ? "numbered" : ""} ${className}`} data-lang={lang} tabIndex={0}>
       {lines.map((l, i) => (
         <span className="cl" key={i}>
           {tokenizeLine(l, lang).map(([c, t], j) => (c ? <span key={j} className={`t-${c}`}>{t}</span> : t))}
