@@ -53,7 +53,9 @@ class Handler(BaseHTTPRequestHandler):
         time.sleep(DELAY * rng.randint(1, 5))
 
         if wants_tool:
-            city = rng.choice(["Thebes", "Memphis", "Luxor", "Aswan", "Giza"])
+            # Two live runs must (practically) never sample the same arguments: with 5 names
+            # alone they collided 1 time in 5, and tests that assert "runs differ" flaked.
+            city = f"{rng.choice(['Thebes', 'Memphis', 'Luxor', 'Aswan', 'Giza'])} {rng.randint(1, 99999)}"
             message = {"role": "assistant", "content": None, "tool_calls": [{
                 "id": "call_" + uuid.uuid4().hex[:8], "type": "function",
                 "function": {"name": "get_weather", "arguments": json.dumps({"city": city})}}]}
