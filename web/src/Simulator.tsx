@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Inspector, ownerOf, type Tab } from "./components/Inspector";
 import { MoonLoader } from "./components/MoonLoader";
-import { PageHelp } from "./components/PageHelp";
+import { HelpFab } from "./components/HelpFab";
 import { Multiverse, type Sel } from "./components/Multiverse";
 import { PageMap } from "./components/PageMap";
 import { Trace } from "./components/Trace";
@@ -327,14 +327,12 @@ export function Simulator() {
 
   return (
     <>
-      <div className="help-wrap">
-        <PageHelp id="simulator" title="the Simulator" steps={[
+      <HelpFab title="the Simulator" guide="simulator" steps={[
           <>This is a recorded run of a team of AI agents that failed a task. Everything runs in your browser.</>,
           <>Click the six chapter buttons below in order, starting with <b>Replay ▶</b>. Each one tells one part of the story.</>,
           <>In the <b>Timeline multiverse</b>, every lane is a timeline and every dot a step. The same color means the same world.</>,
           <>Click any dot to inspect that moment on the right. Use the scrubber, <b>⑂ Fork</b> or <b>✎ Inject</b> to branch it yourself.</>,
         ]} />
-      </div>
       <SimHud />
       <main className="main">
         <section className="panel multiverse">
