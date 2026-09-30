@@ -52,6 +52,15 @@ export default function App() {
     return () => removeEventListener("hashchange", on);
   }, []);
 
+  // Each page gets its own tab title (and history entry name).
+  useEffect(() => {
+    const names: Record<Route, string> = {
+      home: "Khonsu: Time-Travel Debugger for AI Agents", guide: "Guide · Khonsu", downloads: "Download · Khonsu",
+      viewer: "Viewer · Khonsu", play: "Play · Khonsu", simulator: "Simulator · Khonsu", bench: "Benchmarks · Khonsu",
+    };
+    document.title = names[route];
+  }, [route]);
+
   // Warm the other pages once the current one is idle.
   useEffect(() => {
     const idle = (cb: () => void) =>
@@ -89,7 +98,7 @@ export default function App() {
         </nav>
       </header>
       <Suspense fallback={<MoonLoader />}>
-        <div className="route" key={route}>
+        <main className="route" key={route} id="content">
           {route === "home" && <Landing />}
           {route === "guide" && <Guide />}
           {route === "downloads" && <Downloads />}
@@ -97,7 +106,7 @@ export default function App() {
           {route === "play" && <Play />}
           {route === "simulator" && <Simulator />}
           {route === "bench" && <Bench />}
-        </div>
+        </main>
       </Suspense>
     </div>
   );
