@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Flaky } from "./components/Flaky";
 import { HeroDial } from "./components/HeroDial";
-import { spotlight, useCountUp, useReveal } from "./lib/motion";
+import { reducedMotion, spotlight, useCountUp, useReveal } from "./lib/motion";
 import type { DialTick } from "./viewer/MoonDial";
 
 // A run for the hero dial: model calls (gold), tools (faience), one failing test run.
@@ -85,12 +85,55 @@ function Stats() {
   );
 }
 
+/** Scroll drift for the hero and a gentle 3D tilt of the moon toward the pointer. */
+function useHeroMotion(hero: React.RefObject<HTMLElement | null>, dial: React.RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const h = hero.current, d = dial.current;
+    if (!h || !d || reducedMotion()) return;
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const p = Math.min(1, scrollY / Math.max(1, h.offsetHeight));
+        h.style.setProperty("--scroll", p.toFixed(3));
+      });
+    };
+    const fine = matchMedia("(pointer: fine)").matches;
+    const onMove = (e: PointerEvent) => {
+      const r = d.getBoundingClientRect();
+      const x = (e.clientX - (r.left + r.width / 2)) / r.width;
+      const y = (e.clientY - (r.top + r.height / 2)) / r.height;
+      d.style.setProperty("--ry", `${Math.max(-1, Math.min(1, x)) * 7}deg`);
+      d.style.setProperty("--rx", `${Math.max(-1, Math.min(1, -y)) * 7}deg`);
+    };
+    const onLeave = () => {
+      d.style.setProperty("--ry", "0deg");
+      d.style.setProperty("--rx", "0deg");
+    };
+    addEventListener("scroll", onScroll, { passive: true });
+    if (fine) {
+      h.addEventListener("pointermove", onMove);
+      h.addEventListener("pointerleave", onLeave);
+    }
+    return () => {
+      cancelAnimationFrame(raf);
+      removeEventListener("scroll", onScroll);
+      h.removeEventListener("pointermove", onMove);
+      h.removeEventListener("pointerleave", onLeave);
+    };
+  }, [hero, dial]);
+}
+
 export function Landing() {
   const root = useRef<HTMLElement>(null);
+  const hero = useRef<HTMLElement>(null);
+  const dial = useRef<HTMLDivElement>(null);
   useReveal(root);
+  useHeroMotion(hero, dial);
   return (
     <main className="landing" ref={root}>
-      <section className="hero">
+      <section className="hero" ref={hero}>
         <div className="hero-copy">
           <p className="eyebrow enter" style={delay(0)}>Khonsu · the traveller</p>
           <h1 className="display enter" style={delay(90)}>Travel back to the moment your agent went wrong.</h1>
@@ -103,11 +146,14 @@ export function Landing() {
             <a className="btn big glass" href="#/play">Fork a running program</a>
           </div>
           <p className="hero-note enter" style={delay(360)}>
-            Everything here runs in your browser: the C++ engine, compiled to WebAssembly.
+            New here? <a href="#/guide">Read the two-minute guide</a> first. Everything on this site runs in your browser.
           </p>
         </div>
-        <div className="hero-dial enter" style={delay(150)}>
-          <HeroDial ticks={HERO_TICKS} />
+        <div className="hero-dial moonrise" ref={dial}>
+          <div className="rays" aria-hidden />
+          <div className="tilt">
+            <HeroDial ticks={HERO_TICKS} />
+          </div>
         </div>
       </section>
 
