@@ -3,7 +3,7 @@ name: Release
 # A version tag (v0.3.1, or v0.4.0-rc1 for a pre-release) builds and tests the package, then:
 #   1. creates the GitHub Release with every download attached and notes since the last tag;
 #   2. publishes the Python SDK to PyPI (once PyPI trusted publishing is set up, see RELEASING.md);
-#   3. publishes the JavaScript SDK to npm (once the NPM_TOKEN secret exists).
+#   3. publishes the JavaScript SDK to npm (once npm trusted publishing is set up, see RELEASING.md).
 # Steps 2 and 3 skip themselves, with a notice, until they are configured.
 # Cut a release with:   scripts/release.sh 0.3.1
 #
@@ -124,22 +124,25 @@ jobs:
     environment:
       name: npm
       url: https://www.npmjs.com/package/khonsu-sdk
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    permissions:
+      contents: read
+      id-token: write  # npm trusted publishing: GitHub proves who publishes, no stored token
     steps:
-      - if: env.NODE_AUTH_TOKEN == ''
-        run: echo "::notice::npm publishing is off. Add the NPM_TOKEN secret (RELEASING.md) to turn it on."
-      - if: env.NODE_AUTH_TOKEN != ''
+      - if: vars.PUBLISH_NPM != 'true'
+        run: echo "::notice::npm publishing is off. Set it up (RELEASING.md), then set the repository variable PUBLISH_NPM=true."
+      - if: vars.PUBLISH_NPM == 'true'
         uses: actions/setup-node@v5
         with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
-      - if: env.NODE_AUTH_TOKEN != ''
+          node-version: 24  # no registry-url: no token line in .npmrc to get in the way of trusted publishing
+      - if: vars.PUBLISH_NPM == 'true'
+        name: npm 11.5.1 or newer (trusted publishing)
+        run: npm install --global npm@latest && npm --version
+      - if: vars.PUBLISH_NPM == 'true'
         uses: actions/download-artifact@v5
         with:
           name: downloads
           path: downloads
-      - if: env.NODE_AUTH_TOKEN != ''
+      - if: vars.PUBLISH_NPM == 'true'
         name: Publish (pre-releases under the "next" tag)
         run: |
           set -euo pipefail
