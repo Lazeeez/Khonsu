@@ -1,16 +1,23 @@
 import { Suspense, lazy, useEffect, useState } from "react";
 import { Moon } from "./components/Moon";
+import { Sky } from "./components/Sky";
 import { Landing } from "./Landing";
 
 // Heavy pages load on demand: the landing page ships no WebAssembly and no canvas code.
-const Viewer = lazy(() => import("./viewer/Viewer").then((m) => ({ default: m.Viewer })));
-const Simulator = lazy(() => import("./Simulator").then((m) => ({ default: m.Simulator })));
-const Play = lazy(() => import("./play/Play").then((m) => ({ default: m.Play })));
-const Bench = lazy(() => import("./components/Bench").then((m) => ({ default: m.Bench })));
+// Each loader is also called ahead of time (idle, or on hover/touch of its link), so a
+// click almost never waits on the network.
+const loaders = {
+  viewer: () => import("./viewer/Viewer").then((m) => ({ default: m.Viewer })),
+  play: () => import("./play/Play").then((m) => ({ default: m.Play })),
+  simulator: () => import("./Simulator").then((m) => ({ default: m.Simulator })),
+  bench: () => import("./components/Bench").then((m) => ({ default: m.Bench })),
+};
+const Viewer = lazy(loaders.viewer);
+const Play = lazy(loaders.play);
+const Simulator = lazy(loaders.simulator);
+const Bench = lazy(loaders.bench);
 
-const REPO_URL: string | undefined = import.meta.env.VITE_REPO_URL;
-
-type Route = "home" | "viewer" | "play" | "simulator" | "bench";
+type Route = "home" | keyof typeof loaders;
 
 function routeOf(hash: string): Route {
   if (hash.startsWith("#/viewer")) return "viewer";
@@ -18,6 +25,13 @@ function routeOf(hash: string): Route {
   if (hash.startsWith("#/simulator")) return "simulator";
   if (hash.startsWith("#/bench")) return "bench";
   return "home";
+}
+
+const prefetched = new Set<Route>();
+function prefetch(r: Route) {
+  if (r === "home" || prefetched.has(r)) return;
+  prefetched.add(r);
+  loaders[r]().catch(() => prefetched.delete(r));
 }
 
 export default function App() {
@@ -31,12 +45,24 @@ export default function App() {
     return () => removeEventListener("hashchange", on);
   }, []);
 
-  const link = (r: Route, href: string, label: string) => (
-    <a href={href} className={route === r ? "active" : ""} aria-current={route === r ? "page" : undefined}>{label}</a>
+  // Warm the other pages once the current one is idle.
+  useEffect(() => {
+    const idle = (cb: () => void) =>
+      "requestIdleCallback" in window ? requestIdleCallback(cb, { timeout: 4000 }) : setTimeout(cb, 2500);
+    const id = idle(() => (["viewer", "play", "bench", "simulator"] as Route[]).forEach(prefetch));
+    return () => ("cancelIdleCallback" in window ? cancelIdleCallback(id as number) : clearTimeout(id as number));
+  }, []);
+
+  const link = (r: Route, label: string) => (
+    <a href={`#/${r}`} className={route === r ? "active" : ""} aria-current={route === r ? "page" : undefined}
+      onPointerEnter={() => prefetch(r)} onTouchStart={() => prefetch(r)} onFocus={() => prefetch(r)}>
+      {label}
+    </a>
   );
 
   return (
     <div className="app">
+      <Sky animate={route === "home"} />
       <header className="topbar">
         <a className="brand" href="#/">
           <Moon />
@@ -45,21 +71,21 @@ export default function App() {
             <div className="sub">time-travel debugger for AI agents</div>
           </div>
         </a>
-        <nav className="nav">
-          {link("viewer", "#/viewer", "Viewer")}
-          {link("play", "#/play", "Play")}
-          {link("simulator", "#/simulator", "Simulator")}
-          {link("bench", "#/bench", "Benchmarks")}
-          {REPO_URL && <a href={`${REPO_URL}#readme`} target="_blank" rel="noreferrer">Docs</a>}
-          {REPO_URL && <a href={REPO_URL} target="_blank" rel="noreferrer">GitHub</a>}
+        <nav className="nav" aria-label="Main">
+          {link("viewer", "Viewer")}
+          {link("play", "Play")}
+          {link("simulator", "Simulator")}
+          {link("bench", "Benchmarks")}
         </nav>
       </header>
-      <Suspense fallback={<div className="loading"><div className="moon-spin"><Moon size={44} /></div><div>Loading…</div></div>}>
-        {route === "home" && <Landing />}
-        {route === "viewer" && <Viewer />}
-        {route === "play" && <Play />}
-        {route === "simulator" && <Simulator />}
-        {route === "bench" && <Bench />}
+      <Suspense fallback={<div className="loading"><div className="moon-breathe"><Moon size={44} /></div><div>Loading…</div></div>}>
+        <div className="route" key={route}>
+          {route === "home" && <Landing />}
+          {route === "viewer" && <Viewer />}
+          {route === "play" && <Play />}
+          {route === "simulator" && <Simulator />}
+          {route === "bench" && <Bench />}
+        </div>
       </Suspense>
     </div>
   );
