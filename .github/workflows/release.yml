@@ -6,16 +6,29 @@ name: Release
 #   3. publishes the JavaScript SDK to npm (once the NPM_TOKEN secret exists).
 # Steps 2 and 3 skip themselves, with a notice, until they are configured.
 # Cut a release with:   scripts/release.sh 0.3.1
+#
+# Every step is safe to repeat: an existing GitHub Release gets its files re-uploaded, and a
+# version already on PyPI or npm is skipped. To finish or repair a release with the current
+# workflow (a re-run would use the workflow as it was at the tag), run this workflow by hand
+# from the Actions tab and enter the tag.
 
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and publish (e.g. v0.3.0)
+        required: true
 
 permissions:
   contents: read
 
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -24,11 +37,15 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - run: scripts/check_version.sh "${GITHUB_REF_NAME#v}"
+        with:
+          ref: ${{ env.TAG }}
+      - run: scripts/check_version.sh "${TAG#v}"
 
   package:
     needs: version
     uses: ./.github/workflows/package.yml
+    with:
+      ref: ${{ inputs.tag || github.ref_name }}
 
   github-release:
     name: GitHub Release
@@ -41,15 +58,21 @@ jobs:
         with:
           name: downloads
           path: downloads
-      - name: Create the release with its downloads
+      - name: Create the release with its downloads (or refresh them)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="$GITHUB_REF_NAME"; version="${tag#v}"
+          version="${TAG#v}"
+          files=(downloads/khonsu* downloads/SHA256SUMS downloads/install.sh)
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+            echo "::notice::$TAG already existed: its files were refreshed"
+            exit 0
+          fi
           site="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}"
           # What changed since the previous tag, written by GitHub from the commit history.
-          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$tag" --jq .body > changes.md
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" --jq .body > changes.md
           {
             echo "## Install"
             echo
@@ -66,8 +89,8 @@ jobs:
           } > notes.md
           flags=()
           [[ "$version" == *-* ]] && flags+=(--prerelease)
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "Khonsu $version" --notes-file notes.md --verify-tag "${flags[@]}" \
-            downloads/khonsu* downloads/SHA256SUMS downloads/install.sh
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "Khonsu $version" --notes-file notes.md --verify-tag \
+            "${flags[@]}" "${files[@]}"
 
   pypi:
     name: Publish to PyPI
@@ -119,7 +142,10 @@ jobs:
       - if: env.NODE_AUTH_TOKEN != ''
         name: Publish (pre-releases under the "next" tag)
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          set -euo pipefail
+          version="${TAG#v}"
           if npm view "khonsu-sdk@$version" version >/dev/null 2>&1; then echo "khonsu-sdk@$version is already published"; exit 0; fi
-          tag=latest; [[ "$version" == *-* ]] && tag=next
-          npm publish downloads/khonsu-sdk-*.tgz --access public --tag "$tag"
+          dist_tag=latest; [[ "$version" == *-* ]] && dist_tag=next
+          # "./" matters: without it npm reads "downloads/x.tgz" as a GitHub "user/repo" shorthand.
+          tarball=(./downloads/khonsu-sdk-*.tgz)
+          npm publish "${tarball[0]}" --access public --tag "$dist_tag"
