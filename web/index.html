@@ -1,18 +1,38 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" style="background:#050a18;color-scheme:dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Khonsu: a deterministic, forkable runtime for multi-agent LLM systems. O(1) fork, O(1) seek, bit-exact replay, running entirely in your browser via WebAssembly." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Khonsu: Time-Travel Debugger for AI Agents</title>
+    <meta name="description" content="Record any AI agent run, replay it exactly with no model and no cost, inspect every call and file at any moment, and fork a new future from any step. Works with any framework." />
     <meta name="theme-color" content="#050a18" />
+    <link rel="canonical" href="%VITE_SITE_URL%" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+
+    <!-- link previews (Slack, LinkedIn, X, iMessage) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Khonsu" />
+    <meta property="og:title" content="Khonsu: travel back to the moment your agent went wrong" />
+    <meta property="og:description" content="Record any AI agent run, replay it exactly, inspect every moment, and fork a new future from any call. Free, local, any framework." />
+    <meta property="og:url" content="%VITE_SITE_URL%" />
+    <meta property="og:image" content="%VITE_SITE_URL%og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Khonsu: a moon orbited by an agent's calls, and the words Travel back to the moment your agent went wrong." />
+    <meta name="twitter:card" content="summary_large_image" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Egyptian+Hieroglyphs&text=%F0%93%90%8D%F0%93%88%96%F0%93%8B%B4%F0%93%85%B1&display=swap" rel="stylesheet" />
-    <title>Khonsu: Time-Travel Debugger for AI Agents</title>
   </head>
   <body>
+    <noscript>
+      <div style="max-width:560px;margin:18vh auto;padding:0 20px;font:16px/1.6 system-ui,sans-serif;color:#e6e3d8;text-align:center">
+        <h1 style="font-weight:600;color:#fbe3a1">Khonsu</h1>
+        <p>This site runs Khonsu's engine in your browser, so it needs JavaScript. Please enable it and reload.</p>
+      </div>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
