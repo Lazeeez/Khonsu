@@ -57,15 +57,23 @@ await page.getByRole("link", { name: "Open a recorded run" }).click();
 await expectText("integrity verified");
 const dial = page.getByRole("slider", { name: /Moon Dial/ });
 await dial.focus();
-await page.keyboard.press("ArrowRight");        // → call #1: the first model call
-await expectText("Add a greeting endpoint");    // its prompt, rendered from the .khn by the wasm kernel
+await expectText("cracked base");                // the customer's message, rendered from the .khn by the wasm kernel
+await page.keyboard.press("ArrowRight");        // → call #1: lookup_order
+await page.locator(".arg", { hasText: "A1042" }).first().waitFor();
 step("viewer loads a .khn and renders call detail");
-await page.keyboard.press("ArrowRight");        // → call #2 (write_file)
+await shot("02-viewer");
+
+// the coding example: a file created at one call, changed at a later one
+await page.getByRole("button", { name: /^Examples/ }).click();
+await page.getByRole("menuitem", { name: /Coding agent/ }).click();
+await page.getByRole("heading", { name: /Coding agent: failing test/ }).waitFor();  // loaded: selection resets to #0 first
+await dial.focus();
+await page.keyboard.press("Home");
+for (let i = 0; i < 7; i++) await page.keyboard.press("ArrowRight");  // → call #7: write_file changes solution.py
 await expectText("this call changed 1 file");
 await page.locator(".file.changed").first().click();
 await page.locator(".difflines .add").first().waitFor();
 step("dial navigates; workspace diff for the call renders");
-await shot("02-viewer");
 
 await page.getByRole("button", { name: "Compare with a re-run" }).click();
 await expectText("First divergence");
@@ -75,19 +83,17 @@ await shot("03-compare");
 // Examples menu, the example's story behind the "?", and readable tool arguments.
 await page.getByRole("button", { name: "Close compare" }).click();
 await page.getByRole("button", { name: /^Examples/ }).click();
-await page.getByRole("menuitem", { name: /Fork at call #4/ }).click();
+await page.getByRole("menuitem", { name: /Fork: a new future/ }).click();
 await expectText("fork of");
 await page.getByRole("button", { name: /What happened in this example/ }).click();
 await expectText("About this example");
-await page.locator(".fab-panel").getByRole("button", { name: "#4" }).click();
-if ((await page.getByRole("slider", { name: /Moon Dial/ }).getAttribute("aria-valuenow")) !== "4") errors.push("story: #4 did not select call 4");
+await page.locator(".fab-panel").getByRole("button", { name: "#6" }).click();
+if ((await page.getByRole("slider", { name: /Moon Dial/ }).getAttribute("aria-valuenow")) !== "6") errors.push("story: #6 did not select call 6");
 await page.keyboard.press("Escape");
 await page.locator(".fab-panel").waitFor({ state: "detached" });
 await page.getByRole("slider", { name: /Moon Dial/ }).focus();
-await page.keyboard.press("Home");
-await page.keyboard.press("ArrowRight");
-await page.keyboard.press("ArrowRight");  // call #2: write_file(out/answer.md)
-await page.locator(".arg .codeview .cl", { hasText: "# answer" }).first().waitFor();
+await page.keyboard.press("ArrowRight");  // call #7: write_file(solution.py), a new implementation
+await page.locator(".arg .codeview .cl", { hasText: "def to_roman" }).first().waitFor();
 step("examples menu, example story with call links, formatted tool arguments");
 
 // Drop-in import of an OpenTelemetry GenAI trace (no .khn needed).
@@ -152,7 +158,7 @@ await shot("06-bench");
 
 // ── mobile: no horizontal overflow on the main pages ──────────────────────────────────────────
 await page.setViewportSize({ width: 390, height: 844 });
-for (const [route, marker] of [["", "Travel back"], ["#/viewer?src=coding-agent.khn", "integrity verified"], ["#/play", "Branch #0"], ["#/bench", "Against the alternatives"]]) {
+for (const [route, marker] of [["", "Travel back"], ["#/viewer?src=support-agent.khn", "integrity verified"], ["#/play", "Branch #0"], ["#/bench", "Against the alternatives"]]) {
   await page.goto(base + route);
   await expectText(marker);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
