@@ -140,12 +140,11 @@ def tool(fn: F | None = None, *, name: str | None = None, replay: str = "skip"):
                 _raise_recorded(outcome.get("error", {}))
             token = answer["token"]
             try:
-                result = f(*args, **kwargs)
-            except Exception as e:
+                result = _jsonable(f(*args, **kwargs), "the return value")
+            except Exception as e:  # includes a result that is not JSON: the call is closed either way
                 _post("/end", {"token": token,
                                "outcome": {"ok": False, "error": {"type": type(e).__name__, "message": str(e)}}})
                 raise
-            result = _jsonable(result, "the return value")
             _post("/end", {"token": token, "outcome": {"ok": True, "result": result}})
             return result
 
