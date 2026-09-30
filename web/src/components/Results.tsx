@@ -55,7 +55,7 @@ export function Results() {
         <section>
           <h3>vs HTTP cassettes (vcrpy {vcr.calls} calls)</h3>
           <Table
-            head={["", "Khonsu", "vcrpy"]}
+            head={["Measure", "Khonsu", "vcrpy"]}
             rows={[
               ["record, p50 per call", `${L.khonsu_record.p50_ms.toFixed(2)} ms`, `${L.vcrpy_record.p50_ms.toFixed(2)} ms`],
               ["replay, p50 per call", `${L.khonsu_replay.p50_ms.toFixed(2)} ms`, `${L.vcrpy_playback.p50_ms.toFixed(2)} ms`],
@@ -69,7 +69,7 @@ export function Results() {
         <section>
           <h3>vs LangGraph checkpointers</h3>
           <Table
-            head={["", "Khonsu", "LangGraph"]}
+            head={["Measure", "Khonsu", "LangGraph"]}
             rows={[
               [`time travel, ${langgraph.time_travel.trials} resumes`, `${langgraph.time_travel.khonsu_replay_distinct_outcomes} outcome`, `${langgraph.time_travel.langgraph_resume_distinct_outcomes} outcomes`],
               [`storage at ${lgLast.turns} turns`, fmtBytes(lgLast.khonsu_recording_bytes), `${fmtBytes(lgLast.langgraph_sqlite_payload_bytes)} (SQLite)`],
