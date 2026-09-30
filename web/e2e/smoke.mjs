@@ -13,7 +13,16 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 
-const shot = async (name) => shots && page.screenshot({ path: `${shots}/${name}.png`, fullPage: true });
+// Scroll through first so scroll-revealed sections are on the full-page capture.
+const shot = async (name) => {
+  if (!shots) return;
+  await page.evaluate(async () => {
+    for (let y = 0; y < document.body.scrollHeight; y += innerHeight / 2) { scrollTo(0, y); await new Promise((r) => setTimeout(r, 60)); }
+    scrollTo(0, 0);
+  });
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: `${shots}/${name}.png`, fullPage: true });
+};
 const expectText = async (text, timeout = 15000) => page.getByText(text, { exact: false }).first().waitFor({ timeout });
 const step = (name) => console.log(`  · ${name}`);
 
