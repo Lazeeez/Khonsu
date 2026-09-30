@@ -14,9 +14,10 @@ namespace khonsu::native {
 namespace {
 
 bool iequals(std::string_view a, std::string_view b) {
-  return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
-           return (x | 0x20) == (y | 0x20);
-         });
+  // ASCII case-insensitive; only letters fold (x | 0x20 alone would also equate '@' and '`').
+  auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c | 0x20) : c; };
+  return a.size() == b.size() &&
+         std::equal(a.begin(), a.end(), b.begin(), [&](char x, char y) { return lower(x) == lower(y); });
 }
 
 // Headers forwarded to the upstream model API. Everything else (hop-by-hop,
@@ -56,6 +57,22 @@ std::string host_header(const Endpoint& e) {
 }
 
 }  // namespace
+
+// True when the newest `fresh` bytes of an SSE body complete the terminal event line.
+// Markers are matched at the start of a line (and may straddle reads), so a model that
+// merely *writes* "[DONE]" in its text (inside a JSON string) never triggers the hold.
+static bool ends_stream(std::string_view body, std::size_t fresh) {
+  static constexpr std::string_view kMarkers[] = {
+      "data: [DONE]", "data:[DONE]",                    // OpenAI chat/completions
+      "event: message_stop", "data: {\"type\":\"message_stop\"",  // Anthropic messages
+      "event: response.completed",                      // OpenAI responses
+  };
+  const std::size_t from = body.size() > fresh + 40 ? body.size() - fresh - 40 : 0;
+  for (std::string_view m : kMarkers)
+    for (std::size_t at = body.find(m, from); at != std::string_view::npos; at = body.find(m, at + 1))
+      if (at == 0 || body[at - 1] == '\n') return true;
+  return false;
+}
 
 struct Incoming {
   HttpRequest http;
@@ -251,7 +268,7 @@ const rec::Exchange* Proxy::match(Stream& client, Incoming& in, bool& refused, b
     return nullptr;
   }
   rec::ReplayIndex::Miss miss;
-  if (const rec::Exchange* ex = index_->take(r.key, r.body, &miss)) {
+  if (const rec::Exchange* ex = index_->take(r.key, r.body, &miss, r.path)) {
     const std::uint64_t rs = ex->req.seq;
     if (cfg_.workspace) cfg_.workspace->before_request(r.seq, &rs);
     return ex;
@@ -396,7 +413,7 @@ void Proxy::forward_live(Stream& client, const Incoming& in, bool after_miss) {
   }
   const Endpoint& up = *cfg_.upstream;
   std::string err;
-  auto upstream = connect(up, cfg_.upstream_timeout_ms, &err);
+  auto upstream = connect(up, std::min(15'000, cfg_.upstream_timeout_ms), &err, cfg_.upstream_timeout_ms);
   if (!upstream) {
     stats_.errors.fetch_add(1);
     log("\033[31mupstream error: " + err + "\033[0m");
@@ -436,6 +453,10 @@ void Proxy::forward_live(Stream& client, const Incoming& in, bool after_miss) {
                             head.headers.get("transfer-encoding").empty() && !resp.streamed;
   Headers extra;
   if (const auto id = head.headers.get("x-request-id"); !id.empty()) extra.set("X-Request-Id", std::string(id));
+  // Live only (never recorded): lets SDKs back off correctly on 429s.
+  for (const auto& [k, v] : head.headers.items)
+    if (iequals(k, "retry-after") || (k.size() > 12 && iequals(std::string_view(k).substr(0, 12), "x-ratelimit-")))
+      extra.set(k, v);
   extra.set("X-Khonsu", after_miss ? "live-after-divergence" : "live");
 
   BodyReader body(ur, head.headers, head.status == 204 || head.status == 304);
@@ -463,6 +484,12 @@ void Proxy::forward_live(Stream& client, const Incoming& in, bool after_miss) {
     // Buffer so the client sees a normal Content-Length response.
     while (body.next(resp.body)) {
     }
+    if (body.error()) {  // cut short: never hand the agent (or the recording) a truncated body as complete
+      stats_.errors.fetch_add(1);
+      log("\033[31mupstream response for request #" + std::to_string(in.rec.seq) + " was truncated\033[0m");
+      write_json_error(client, 502, "khonsu_upstream_truncated", "the upstream response ended before its Content-Length");
+      return;
+    }
     commit();
     (void)(w.head(head.status, resp.content_type, extra, false, resp.body.size()) && w.chunk(resp.body) &&
            w.finish());
@@ -475,8 +502,7 @@ void Proxy::forward_live(Stream& client, const Incoming& in, bool after_miss) {
       if (!body.next(piece)) break;
       resp.body += piece;
       resp.chunks.push_back({static_cast<std::uint32_t>(resp.body.size()), elapsed_us() - t_req});
-      const bool terminal = resp.streamed && (!held.empty() || piece.find("[DONE]") != std::string::npos ||
-                                              piece.find("message_stop") != std::string::npos);
+      const bool terminal = resp.streamed && (!held.empty() || ends_stream(resp.body, piece.size()));
       if (terminal) held += piece;                        // released only after the commit below
       else if (client_ok) client_ok = w.chunk(piece);     // keep draining upstream even if the client left
     }
