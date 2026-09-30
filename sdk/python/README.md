@@ -1,6 +1,6 @@
 # khonsu (Python SDK)
 
-The companion to the [`khonsu`](https://github.com/Lazeeez/Khonsu) CLI, a time-travel debugger for AI agents.
+The companion to the `khonsu` CLI, a time-travel debugger for AI agents.
 
 Model calls are recorded by the CLI's proxy with no code changes. This package adds one decorator for **tool side effects**:
 
