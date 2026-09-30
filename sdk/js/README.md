@@ -1,11 +1,18 @@
-# khonsu (JavaScript / TypeScript SDK)
+# khonsu-sdk (JavaScript / TypeScript)
 
 The companion to the `khonsu` CLI, a time-travel debugger for AI agents, for agents written in Node.js.
+
+```sh
+npm install khonsu-sdk
+curl -fsSL https://lazeeez.github.io/Khonsu/downloads/install.sh | sh    # the khonsu CLI (Linux, or Windows via WSL)
+```
+
+Guide, examples and downloads: **https://lazeeez.github.io/Khonsu/**
 
 The CLI's proxy records model calls with no code changes. This package adds one wrapper for **tool side effects**. It has no dependencies, needs Node ≥ 18, and ships TypeScript types.
 
 ```ts
-import { tool } from "khonsu";
+import { tool } from "khonsu-sdk";
 
 const sendEmail = tool("sendEmail", async (to: string, body: string) => {
   ...  // the network, a database, the clock, the filesystem...
