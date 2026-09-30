@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PageHelp } from "../components/PageHelp";
 import { kernel } from "../kernel/client";
 import { fmtBytes, fmtVtime, lineDiff } from "../lib/ui";
 import { MoonDial, type DialTick } from "./MoonDial";
@@ -389,6 +390,12 @@ export function Viewer() {
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDrag(false); }} onDrop={onDrop}>
       <input ref={fileInput} type="file" accept=".khn,.json" multiple hidden
         onChange={(e) => e.target.files?.length && open([...e.target.files])} />
+      <PageHelp id="viewer" title="the Viewer" steps={[
+        <>Pick a sample on the right (start with <b>Coding agent</b>), or open your own <code>.khn</code> recording or OpenTelemetry trace.</>,
+        <>Drag the moon around the <b>Moon Dial</b>, or use the arrow keys, to travel through the run one call at a time.</>,
+        <>Read the selected call: the prompt, the answer, any tool calls, and which files that call changed.</>,
+        <>Press <b>Compare with a re-run</b> to see where two runs of the same task first went different ways.</>,
+      ]} />
 
       <div className="viewer-bar">
         <button className="btn primary" onClick={() => fileInput.current?.click()} disabled={busy}>Open recording…</button>
