@@ -146,3 +146,55 @@ TEST("recording: rewriting history breaks the chain") {
   CHECK(r->recovery.reason.empty());  // every CRC is valid...
   CHECK(!r->chain_ok);                // ...but the chain exposes the rewrite
 }
+
+TEST("recording: summaries understand Anthropic Messages and OpenAI Responses, buffered and streamed") {
+  rec::Exchange a{make_req(0, R"({"model":"claude","messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]})"),
+                  make_resp(0, R"({"content":[{"type":"text","text":"hello"},{"type":"tool_use","name":"get_weather"}],"usage":{"input_tokens":12,"output_tokens":5}})")};
+  auto s = rec::summarize(a);
+  CHECK(s.last_user_message == "hi");
+  CHECK(s.output_text == "hello");
+  CHECK(s.tool_calls == "get_weather");
+  CHECK(s.prompt_tokens == 12 && s.completion_tokens == 5);
+
+  rec::Exchange as{make_req(1, R"({"model":"claude","stream":true,"messages":[{"role":"user","content":"hi"}]})"),
+                   make_resp(1, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":7,\"output_tokens\":1}}}\n\n"
+                                "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"moon\"}}\n\n"
+                                "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\" god\"}}\n\n"
+                                "event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":9}}\n\n"
+                                "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", true)};
+  s = rec::summarize(as);
+  CHECK(s.output_text == "moon god");
+  CHECK(s.prompt_tokens == 7 && s.completion_tokens == 9);
+
+  rec::Exchange r{make_req(2, R"({"model":"gpt","input":[{"role":"user","content":[{"type":"input_text","text":"why"}]}]})"),
+                  make_resp(2, R"({"output":[{"type":"function_call","name":"lookup"},{"type":"message","content":[{"type":"output_text","text":"because"}]}],"usage":{"input_tokens":3,"output_tokens":4}})")};
+  s = rec::summarize(r);
+  CHECK(s.last_user_message == "why");
+  CHECK(s.output_text == "because");
+  CHECK(s.tool_calls == "lookup");
+  CHECK(s.prompt_tokens == 3 && s.completion_tokens == 4);
+
+  rec::Exchange rs{make_req(3, R"({"model":"gpt","input":"why","stream":true})"),
+                   make_resp(3, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"be\"}\n\n"
+                                "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"cause\"}\n\n"
+                                "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":6}}}\n\n", true)};
+  s = rec::summarize(rs);
+  CHECK(s.last_user_message == "why");
+  CHECK(s.output_text == "because");
+  CHECK(s.prompt_tokens == 2 && s.completion_tokens == 6);
+}
+
+TEST("recording: a miss is diagnosed against the earliest unserved exchange of the same kind") {
+  rec::Request tool = make_req(0, R"({"name":"clock","args":{}})");
+  tool.path = std::string(rec::kToolPath);
+  tool.key = rec::match_key(tool.method, tool.path, tool.body);
+  const auto bytes = build({{tool, make_resp(0, R"({"ok":true,"result":1})")}, {make_req(1, kBodyA), make_resp(1, "ok")}});
+  const auto r = rec::Recording::load(bytes);
+  REQUIRE(r.has_value());
+  rec::ReplayIndex idx(*r);
+  const std::string changed = rec::canonical_body(R"({"model":"m","messages":[{"role":"user","content":"hello!"}],"temperature":0.7})");
+  rec::ReplayIndex::Miss miss;
+  CHECK(idx.take(rec::match_key("POST", "/v1/chat/completions", changed), changed, &miss, "/v1/chat/completions") == nullptr);
+  CHECK(miss.expected_seq == 1);  // the model request, not the unserved tool call before it
+  CHECK(miss.field_path == "messages[0].content");
+}
