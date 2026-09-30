@@ -890,8 +890,10 @@ int cmd_verify(const Options& o) {
   std::printf("hash chain %s\n", !r->end ? "n/a" : (r->chain_ok ? "ok" : "MISMATCH (history rewritten)"));
   std::printf("workspace  %zu snapshots, %zu objects%s\n", r->snapshots.size(), r->objects.size(),
               missing ? (", " + std::to_string(missing) + " MISSING BLOBS").c_str() : ", all restorable");
+  if (r->bad_objects)
+    std::printf("objects    %zu CORRUPT (content does not match its id; dropped)\n", r->bad_objects);
   std::printf("digest     %s\n", r->digest.hex().c_str());
-  const bool ok = clean && r->chain_ok && r->end && missing == 0;
+  const bool ok = clean && r->chain_ok && r->end && missing == 0 && r->bad_objects == 0;
   std::printf("%s\n", ok ? green("verified").c_str() : red("NOT verified").c_str());
   return ok ? 0 : 1;
 }
