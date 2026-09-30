@@ -11,9 +11,10 @@ namespace khonsu::native {
 namespace {
 
 bool iequals(std::string_view a, std::string_view b) {
-  return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
-           return (x | 0x20) == (y | 0x20);
-         });
+  // ASCII case-insensitive; only letters fold (x | 0x20 alone would also equate '@' and '`').
+  auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c | 0x20) : c; };
+  return a.size() == b.size() &&
+         std::equal(a.begin(), a.end(), b.begin(), [&](char x, char y) { return lower(x) == lower(y); });
 }
 
 std::string_view trim(std::string_view s) {
@@ -120,7 +121,7 @@ bool read_response_head(BufReader& in, ResponseHead& out, std::string* error) {
   out.status = static_cast<int>(status);
   out.reason = sp1 + 5 <= line.size() ? line.substr(sp1 + 5) : "";
   if (!read_headers(in, out.headers, error)) return false;
-  if (out.status == 100) {  // skip interim 100 Continue
+  if (out.status >= 100 && out.status < 200 && out.status != 101) {  // skip interim responses (100, 103, ...)
     out = {};
     return read_response_head(in, out, error);
   }
@@ -172,7 +173,7 @@ bool BodyReader::next(std::string& out) {
     case Mode::Chunked: {
       std::string line;
       std::size_t n = 0;
-      if (!in_.line(line) || !parse_size(line, n, 16)) {
+      if (!in_.line(line) || !parse_size(line, n, 16) || n > kMaxBody) {  // never buffer an absurd chunk
         error_ = done_ = true;
         return false;
       }
