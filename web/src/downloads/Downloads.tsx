@@ -22,7 +22,7 @@ function Copyable({ text, label }: { text: string; label?: string }) {
   };
   return (
     <div className="dl-cmd">
-      <code>{text}</code>
+      <code tabIndex={0}>{text}</code>
       <button className="btn small" onClick={copy} aria-label={label ?? "Copy command"}>{done ? "Copied" : "Copy"}</button>
     </div>
   );
@@ -45,7 +45,7 @@ export function Downloads() {
   const tgz = m?.files.find((f) => f.kind === "js");
 
   return (
-    <main className="dl">
+    <div className="dl">
       <header className="dl-hero">
         <p className="eyebrow enter">Download</p>
         <h1 className="display small-display enter" style={{ ["--d" as string]: "80ms" }}>Get Khonsu</h1>
@@ -128,6 +128,6 @@ export function Downloads() {
           </section>
         </>
       )}
-    </main>
+    </div>
   );
 }
