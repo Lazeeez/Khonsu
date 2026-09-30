@@ -110,6 +110,7 @@ struct Recording {
   std::vector<ws::Snapshot> snapshots;  // in recording order
   RecoveryReport recovery;          // torn tail / corruption found while loading
   bool chain_ok = true;             // RunEnd.chain matched (true if no RunEnd)
+  std::size_t bad_objects = 0;      // workspace objects whose content does not match their id (dropped)
   Digest128 digest;                 // identity of the recording (chain at load)
 
   // Loads a serialized EventLog. Frames after the first corrupt one are dropped
@@ -147,7 +148,9 @@ public:
 
   // Thread-safe. Returns the recorded exchange for this request, or nullptr and
   // fills `miss` when the request is not in the recording (a divergence).
-  const Exchange* take(const Digest128& key, std::string_view canonical_body, Miss* miss);
+  // On a miss, the diagnosis compares against the earliest unserved exchange of the same kind
+  // (same `path`; for tool calls, the same tool name), falling back to the earliest of any kind.
+  const Exchange* take(const Digest128& key, std::string_view canonical_body, Miss* miss, std::string_view path = {});
 
   [[nodiscard]] std::size_t served() const;
   // True if the request matches an exchange excluded by live_from: going live there is
