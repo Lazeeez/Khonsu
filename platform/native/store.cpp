@@ -57,14 +57,36 @@ bool write_atomic(const std::string& path, std::span<const std::byte> bytes, std
     }
     off += static_cast<std::size_t>(w);
   }
-  ::fdatasync(fd);
+  if (::fdatasync(fd) != 0) {
+    const int e = errno;
+    ::close(fd);
+    ::unlink(tmp.c_str());
+    if (error) *error = tmp + ": " + std::strerror(e);
+    return false;
+  }
   ::close(fd);
   if (::rename(tmp.c_str(), path.c_str()) != 0) {
     ::unlink(tmp.c_str());
     if (error) *error = path + ": " + std::strerror(errno);
     return false;
   }
+  // The rename is durable only once its directory is: without this, a crash can keep a ref
+  // (written later) while losing the object it points at.
+  const auto slash = path.find_last_of('/');
+  const std::string dir = slash == std::string::npos ? "." : path.substr(0, slash);
+  if (const int d = ::open(dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC); d >= 0) {
+    ::fsync(d);
+    ::close(d);
+  }
   return true;
+}
+
+// Compares secrets in time independent of where they differ.
+bool same_secret(std::string_view a, std::string_view b) {
+  if (b.empty()) return false;
+  unsigned char diff = a.size() == b.size() ? 0 : 1;
+  for (std::size_t i = 0; i < a.size(); ++i) diff |= static_cast<unsigned char>(a[i] ^ b[i % b.size()]);
+  return diff == 0;
 }
 
 std::string hex2(std::uint8_t b) {
@@ -332,7 +354,9 @@ private:
     ++rt_;
     auto s = connect(ep_, 60'000, error);
     if (!s) return std::nullopt;
-    std::string req = method + " " + ep_.base_path + path + " HTTP/1.1\r\nHost: " + ep_.host + "\r\n";
+    const bool default_port = (ep_.tls && ep_.port == 443) || (!ep_.tls && ep_.port == 80);
+    std::string req = method + " " + ep_.base_path + path + " HTTP/1.1\r\nHost: " + ep_.host +
+                      (default_port ? "" : ":" + std::to_string(ep_.port)) + "\r\n";
     if (!token_.empty()) req += "Authorization: Bearer " + token_ + "\r\n";
     req += "Content-Type: application/octet-stream\r\nContent-Length: " + std::to_string(body.size()) +
            "\r\nConnection: close\r\n\r\n";
@@ -464,7 +488,7 @@ int serve_store(Store& store, const std::string& bind, std::uint16_t port, const
         };
         if (read_request(in, req, &e)) {
           const std::string_view auth = req.headers.get("authorization");
-          if (!token.empty() && auth != "Bearer " + token) {
+          if (!token.empty() && !same_secret(auth, "Bearer " + token)) {
             reply(401, "unauthorized", "text/plain");
           } else if (req.method == "GET" && req.target == "/v1/summary") {
             Writer w;
