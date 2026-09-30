@@ -3,7 +3,7 @@
 // fork is a commit of the dirty pages plus an O(1) root copy, and the child copies
 // a 4 KiB page only when it first writes to it.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PageHelp } from "../components/PageHelp";
+import { HelpFab } from "../components/HelpFab";
 import { kernel } from "../kernel/client";
 import { fmtBytes, fmtInt, laneColor } from "../lib/ui";
 import { PRESETS } from "./programs";
@@ -230,7 +230,7 @@ export function Play() {
         </div>
       </section>
 
-      <PageHelp id="play" title="Play" steps={[
+      <HelpFab title="Play" guide="play" steps={[
         <>A program is already running. Watch its output on the right and its branch in the middle.</>,
         <>Press <b>⑂ Fork</b> or the <kbd>F</kbd> key while it runs. A second branch appears, sharing all its memory with the first.</>,
         <>Select the new branch, change a number in <b>Variables</b>, and press <b>▶ Run</b> to see a different future.</>,
@@ -365,7 +365,7 @@ function Editor({ src, setSrc, err, line, presetIx, onPreset, onRun, busy }: {
       </div>
       <div className="panel-b">
         <p className="muted small" style={{ marginTop: 0 }}>{PRESETS[presetIx].blurb}</p>
-        <div className="code">
+        <div className="lune-editor">
           <div className="gutter" ref={gutter} aria-hidden>
             {Array.from({ length: lines }, (_, i) => (
               <div key={i} className={i + 1 === err?.line ? "err" : i + 1 === line ? "cur" : ""}>{i + 1}</div>
