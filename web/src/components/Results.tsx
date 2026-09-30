@@ -6,8 +6,6 @@ import vcr from "../../../bench/results/vcr.json";
 import study from "../../../study/results.json";
 import { fmtBytes } from "../lib/ui";
 
-const REPO_URL: string | undefined = import.meta.env.VITE_REPO_URL;
-
 type Row = [string, string, string];
 
 function Table({ head, rows }: { head: [string, string, string]; rows: Row[] }) {
@@ -40,8 +38,6 @@ export function Results() {
     <div className="panel results">
       <div className="panel-h">
         <h2>Against the alternatives</h2>
-        <span className="spacer" />
-        {REPO_URL && <a className="small" href={`${REPO_URL}/blob/main/docs/RESULTS.md`} target="_blank" rel="noreferrer">method →</a>}
       </div>
       <div className="panel-b results-grid">
         <section>
