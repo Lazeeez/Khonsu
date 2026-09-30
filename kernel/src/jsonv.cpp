@@ -42,8 +42,9 @@ Value Value::object(Object o) {
 
 const Value* Value::get(std::string_view key) const {
   if (kind_ != Kind::Object) return nullptr;
-  for (const auto& [k, v] : o_)
-    if (k == key) return &v;
+  // Last occurrence wins, as in canonical() and JSON.parse: every reader sees the same value.
+  for (auto it = o_.rbegin(); it != o_.rend(); ++it)
+    if (it->first == key) return &it->second;
   return nullptr;
 }
 
@@ -236,10 +237,14 @@ private:
             return std::nullopt;
           }
           if (cp >= 0xD800 && cp <= 0xDBFF) {  // surrogate pair
-            std::uint32_t lo;
+            // Only consume the next escape if it is the low half; otherwise it is parsed on
+            // its own (a lone high surrogate must not swallow the character after it).
+            const std::size_t save = p_;
+            std::uint32_t lo = 0;
             if (t_.substr(p_, 2) == "\\u" && (p_ += 2, hex4(lo)) && lo >= 0xDC00 && lo <= 0xDFFF) {
               cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
             } else {
+              p_ = save;
               cp = 0xFFFD;  // lone surrogate: replacement character, deterministically
             }
           } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
