@@ -50,6 +50,11 @@ The next release creates the project on PyPI and publishes it.
    - Expiration: the longest npm allows for a token that can publish (90 days). Put a reminder in your calendar to replace it before then: generate a new token and update the `NPM_TOKEN` secret.
 3. In this repository: **Settings → Secrets and variables → Actions → Secrets → New repository secret**: `NPM_TOKEN` = the token.
 
-## Re-running a release
+## Finishing or repairing a release
 
-If a release job fails (a flaky network, a registry outage), open it under **Actions → Release** and use **Re-run failed jobs**. Every publishing step is safe to repeat. To redo a release from scratch, delete the GitHub Release and the tag (`git push --delete origin v0.3.1`, `git tag -d v0.3.1`), fix the problem, and run `scripts/release.sh` again. Versions already on PyPI or npm cannot be replaced, only superseded, so a broken published version means releasing the next patch version.
+Every step is safe to repeat. If a release job fails (a flaky network, a registry outage, a secret added late), there are two ways to finish it:
+
+- **Actions → Release → Run workflow**, enter the tag (for example `v0.3.0`), and run. This uses the *current* workflow on the tagged code. An existing GitHub Release gets its files refreshed, and versions already on PyPI or npm are skipped. Use this when the workflow itself was fixed after the tag was made.
+- **Re-run failed jobs** on the original run. This uses the workflow exactly as it was when the tag was made.
+
+To redo a release from scratch, delete the GitHub Release and the tag (`git push --delete origin v0.3.1`, `git tag -d v0.3.1`), fix the problem, and run `scripts/release.sh` again. Versions already on PyPI or npm cannot be replaced, only superseded, so a broken published version means releasing the next patch version.
