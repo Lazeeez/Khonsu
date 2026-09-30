@@ -1,5 +1,6 @@
-import { memo, useCallback, useId, useRef } from "react";
+import { memo, useCallback, useId, useMemo, useRef } from "react";
 import { useSmoothed } from "../lib/motion";
+import { moonTexture } from "../lib/moonTexture";
 
 export interface DialTick {
   kind: "model" | "tool";
@@ -18,11 +19,14 @@ interface Props {
   position?: number;
 }
 
-/** Lit crescent/gibbous path for illuminated fraction f (waxing, lit from the right). */
-function moonPath(cx: number, cy: number, r: number, f: number): string {
+/**
+ * The night side for illuminated fraction f (waxing: lit from the right). It shares the
+ * terminator ellipse with the lit side, so shadow + light always tile the disc exactly.
+ */
+function nightPath(cx: number, cy: number, r: number, f: number): string {
   const rx = r * Math.abs(2 * f - 1);
   const sweep = f > 0.5 ? 1 : 0;
-  return `M ${cx} ${cy - r} A ${r} ${r} 0 0 1 ${cx} ${cy + r} A ${rx} ${r} 0 0 ${sweep} ${cx} ${cy - r} Z`;
+  return `M ${cx} ${cy - r} A ${r} ${r} 0 0 0 ${cx} ${cy + r} A ${rx} ${r} 0 0 ${sweep} ${cx} ${cy - r} Z`;
 }
 
 interface Geometry {
@@ -73,6 +77,7 @@ export function MoonDial({ ticks, value, onChange, size = 300, caption, position
   const n = Math.max(ticks.length, 1);
   const { c, R, angleOf, pos } = geometry(size, n);
   const eased = useSmoothed(value, 140);
+  const tex = useMemo(() => moonTexture(), []);
   const shown = Math.min(n - 1, Math.max(0, position ?? eased));
 
   const pick = useCallback(
@@ -131,6 +136,15 @@ export function MoonDial({ ticks, value, onChange, size = 300, caption, position
             <stop offset="0.55" stopColor="#f1cf7e" />
             <stop offset="1" stopColor="#c8952f" />
           </radialGradient>
+          <clipPath id={id("disc")}><circle cx={c} cy={c} r={moonR} /></clipPath>
+          <filter id={id("terminator")} x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation={moonR * 0.05} />
+          </filter>
+          <radialGradient id={id("rim")} cx="0.5" cy="0.5" r="0.5">
+            <stop offset="0.86" stopColor="rgba(255,248,225,0)" />
+            <stop offset="0.97" stopColor="rgba(255,248,225,0.10)" />
+            <stop offset="1" stopColor="rgba(255,248,225,0)" />
+          </radialGradient>
           <radialGradient id={id("dark")} cx="0.4" cy="0.35" r="0.8">
             <stop offset="0" stopColor="#13234a" />
             <stop offset="1" stopColor="#081330" />
@@ -139,29 +153,40 @@ export function MoonDial({ ticks, value, onChange, size = 300, caption, position
             <stop offset="0.5" stopColor="rgba(241,207,126,0.20)" />
             <stop offset="1" stopColor="rgba(241,207,126,0)" />
           </radialGradient>
-          <filter id={id("glow")} x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur stdDeviation="3.2" result="b" />
-            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
         </defs>
 
         {/* orbit + progress arc */}
         <circle cx={c} cy={c} r={R} fill="none" stroke="var(--line-2)" strokeWidth="1.2" strokeDasharray="1.5 5.5" />
         {n > 1 && shown > 0.001 && (
-          <path d={`M ${x0} ${y0} A ${R} ${R} 0 ${large} 1 ${hx} ${hy}`}
-            fill="none" stroke="var(--gold)" strokeWidth="2.4" strokeLinecap="round" opacity="0.9" filter={`url(#${id("glow")})`} />
+          <g fill="none" strokeLinecap="round">
+            {/* a wide faint stroke under a thin bright one: the glow without a per-frame blur */}
+            <path d={`M ${x0} ${y0} A ${R} ${R} 0 ${large} 1 ${hx} ${hy}`} stroke="rgba(233,185,73,.22)" strokeWidth="7" />
+            <path d={`M ${x0} ${y0} A ${R} ${R} 0 ${large} 1 ${hx} ${hy}`} stroke="var(--gold)" strokeWidth="2.2" opacity="0.95" />
+          </g>
         )}
 
         <Ticks ticks={ticks} size={size} value={value} onChange={onChange} />
 
         {/* the moon, waxing with progress */}
         <circle className="dial-halo" cx={c} cy={c} r={moonR * 1.7} fill={`url(#${id("halo")})`} />
-        <circle cx={c} cy={c} r={moonR} fill={`url(#${id("dark")})`} stroke="rgba(241,207,126,0.22)" />
-        <path d={moonPath(c, c, moonR, f)} fill={`url(#${id("moonlit")})`} />
+        {tex ? (
+          <g className="moon-body">
+            <image href={tex} x={c - moonR} y={c - moonR} width={moonR * 2} height={moonR * 2}
+              clipPath={`url(#${id("disc")})`} preserveAspectRatio="none" />
+            {/* the night side: soft terminator, with a little earthshine showing through */}
+            <g clipPath={`url(#${id("disc")})`}>
+              <path d={nightPath(c, c, moonR * 1.08, f)} fill="#040a1c" opacity={0.9} filter={`url(#${id("terminator")})`} />
+            </g>
+            <circle cx={c} cy={c} r={moonR} fill={`url(#${id("rim")})`} />
+          </g>
+        ) : (
+          <circle cx={c} cy={c} r={moonR} fill={`url(#${id("dark")})`} stroke="rgba(241,207,126,0.22)" />
+        )}
 
         {/* the traveller: current position on the orbit */}
         <circle cx={hx} cy={hy} r={16} fill="rgba(241,207,126,0.16)" />
-        <circle cx={hx} cy={hy} r={8.5} fill={`url(#${id("moonlit")})`} filter={`url(#${id("glow")})`} />
+        <circle cx={hx} cy={hy} r={11} fill="rgba(255,236,190,.28)" />
+        <circle cx={hx} cy={hy} r={8} fill={`url(#${id("moonlit")})`} />
 
         <text x={c} y={c + moonR + 30} textAnchor="middle" className="dial-step">
           {n === 0 ? "—" : `call ${Math.round(shown)} of ${n - 1}`}
