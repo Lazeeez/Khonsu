@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <charconv>
 #include <csignal>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <netdb.h>
@@ -121,6 +122,14 @@ SSL_CTX* tls_ctx() {
     if (!ctx) return;
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
     SSL_CTX_set_default_verify_paths(ctx);
+    // A statically linked OpenSSL only knows the CA directory of the system it was built on.
+    // Also load the distribution's bundle, so the prebuilt binary verifies TLS everywhere.
+    if (!std::getenv("SSL_CERT_FILE"))
+      for (const char* bundle : {"/etc/ssl/certs/ca-certificates.crt",   // Debian, Ubuntu, Arch, WSL
+                                 "/etc/pki/tls/certs/ca-bundle.crt",     // Fedora, RHEL
+                                 "/etc/ssl/ca-bundle.pem",               // openSUSE
+                                 "/etc/ssl/cert.pem"})                   // Alpine
+        if (::access(bundle, R_OK) == 0 && SSL_CTX_load_verify_locations(ctx, bundle, nullptr) == 1) break;
     SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, nullptr);
   });
   return ctx;
