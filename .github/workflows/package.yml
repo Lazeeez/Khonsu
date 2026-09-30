@@ -5,6 +5,11 @@ name: Package
 # so a release is built exactly the way every commit already is.
 on:
   workflow_call:
+    inputs:
+      ref:
+        description: "The commit or tag to package (default: the one that triggered the caller)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -16,6 +21,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - name: Toolchain (GCC 13 for C++23; static libstdc++ and OpenSSL)
         run: |
           sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
