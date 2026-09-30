@@ -9,8 +9,9 @@ VERSION="@VERSION@"
 ARCHIVE="@ARCHIVE@"
 PREFIX="${KHONSU_PREFIX:-$HOME/.local}"
 
-say() { printf '\033[33m☾ khonsu\033[0m %s\n' "$*"; }
-die() { printf '\033[31mkhonsu install: %s\033[0m\n' "$*" >&2; exit 1; }
+if [ -t 1 ]; then gold='\033[33m' red='\033[31m' off='\033[0m'; else gold='' red='' off=''; fi  # colour only on a terminal
+say() { printf "${gold}☾ khonsu${off} %s\n" "$*"; }
+die() { printf "${red}khonsu install: %s${off}\n" "$*" >&2; exit 1; }
 
 [ "$(uname -s)" = "Linux" ] || die "this build is for Linux (on Windows, run it inside WSL; macOS is coming)"
 [ "$(uname -m)" = "x86_64" ] || die "this build is for x86-64; this machine is $(uname -m)"
