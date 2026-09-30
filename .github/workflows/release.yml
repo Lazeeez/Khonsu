@@ -1,0 +1,125 @@
+name: Release
+
+# A version tag (v0.3.1, or v0.4.0-rc1 for a pre-release) builds and tests the package, then:
+#   1. creates the GitHub Release with every download attached and notes since the last tag;
+#   2. publishes the Python SDK to PyPI (once PyPI trusted publishing is set up, see RELEASING.md);
+#   3. publishes the JavaScript SDK to npm (once the NPM_TOKEN secret exists).
+# Steps 2 and 3 skip themselves, with a notice, until they are configured.
+# Cut a release with:   scripts/release.sh 0.3.1
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Tag matches the code
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: scripts/check_version.sh "${GITHUB_REF_NAME#v}"
+
+  package:
+    needs: version
+    uses: ./.github/workflows/package.yml
+
+  github-release:
+    name: GitHub Release
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: downloads
+          path: downloads
+      - name: Create the release with its downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"; version="${tag#v}"
+          site="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}"
+          # What changed since the previous tag, written by GitHub from the commit history.
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$tag" --jq .body > changes.md
+          {
+            echo "## Install"
+            echo
+            echo '```sh'
+            echo "curl -fsSL $site/downloads/install.sh | sh    # the CLI: Linux x86-64, or Windows via WSL"
+            echo "pip install khonsu-sdk                          # Python SDK (import khonsu)"
+            echo "npm install khonsu-sdk                          # JavaScript / TypeScript SDK"
+            echo '```'
+            echo
+            echo "Or download the files below. Verify them with \`sha256sum -c --ignore-missing SHA256SUMS\`."
+            echo "The CLI needs glibc $(python3 -c 'import json;print(json.load(open("downloads/downloads.json"))["glibc"])') or newer."
+            echo
+            cat changes.md
+          } > notes.md
+          flags=()
+          [[ "$version" == *-* ]] && flags+=(--prerelease)
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "Khonsu $version" --notes-file notes.md --verify-tag "${flags[@]}" \
+            downloads/khonsu* downloads/SHA256SUMS downloads/install.sh
+
+  pypi:
+    name: Publish to PyPI
+    needs: package
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/khonsu-sdk/
+    permissions:
+      id-token: write  # PyPI trusted publishing: no stored token
+    steps:
+      - if: vars.PUBLISH_PYPI != 'true'
+        run: echo "::notice::PyPI publishing is off. Set it up (RELEASING.md), then set the repository variable PUBLISH_PYPI=true."
+      - if: vars.PUBLISH_PYPI == 'true'
+        uses: actions/download-artifact@v5
+        with:
+          name: downloads
+          path: downloads
+      - if: vars.PUBLISH_PYPI == 'true'
+        run: mkdir dist && cp downloads/*.whl dist/
+      - if: vars.PUBLISH_PYPI == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          skip-existing: true
+
+  npm:
+    name: Publish to npm
+    needs: package
+    runs-on: ubuntu-24.04
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/khonsu-sdk
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - if: env.NODE_AUTH_TOKEN == ''
+        run: echo "::notice::npm publishing is off. Add the NPM_TOKEN secret (RELEASING.md) to turn it on."
+      - if: env.NODE_AUTH_TOKEN != ''
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - if: env.NODE_AUTH_TOKEN != ''
+        uses: actions/download-artifact@v5
+        with:
+          name: downloads
+          path: downloads
+      - if: env.NODE_AUTH_TOKEN != ''
+        name: Publish (pre-releases under the "next" tag)
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if npm view "khonsu-sdk@$version" version >/dev/null 2>&1; then echo "khonsu-sdk@$version is already published"; exit 0; fi
+          tag=latest; [[ "$version" == *-* ]] && tag=next
+          npm publish downloads/khonsu-sdk-*.tgz --access public --tag "$tag"
