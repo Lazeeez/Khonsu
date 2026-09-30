@@ -3,6 +3,7 @@
 // fork is a commit of the dirty pages plus an O(1) root copy, and the child copies
 // a 4 KiB page only when it first writes to it.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PageHelp } from "../components/PageHelp";
 import { kernel } from "../kernel/client";
 import { fmtBytes, fmtInt, laneColor } from "../lib/ui";
 import { PRESETS } from "./programs";
@@ -228,6 +229,14 @@ export function Play() {
           </p>
         </div>
       </section>
+
+      <PageHelp id="play" title="Play" steps={[
+        <>A program is already running. Watch its output on the right and its branch in the middle.</>,
+        <>Press <b>⑂ Fork</b> or the <kbd>F</kbd> key while it runs. A second branch appears, sharing all its memory with the first.</>,
+        <>Select the new branch, change a number in <b>Variables</b>, and press <b>▶ Run</b> to see a different future.</>,
+        <>The page map shows the memory the fork actually copied (gold and turquoise); grey is still shared.</>,
+        <>Try the <b>Gambler</b> preset and <b>Run all</b> to play eight futures from the same moment.</>,
+      ]} />
 
       <div className="play-grid">
         <Editor
