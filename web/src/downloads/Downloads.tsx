@@ -5,7 +5,10 @@ import { useEffect, useState } from "react";
 import { fmtBytes } from "../lib/ui";
 
 interface FileEntry { file: string; kind: "cli" | "python" | "js"; label: string; bytes: number; sha256: string }
-interface Manifest { version: string; built: string; glibc: string; files: FileEntry[] }
+interface Manifest {
+  version: string; built: string; glibc: string; files: FileEntry[];
+  registries?: { pypi: boolean; npm: boolean };  // live on PyPI / npm at build time
+}
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -113,8 +116,16 @@ export function Downloads() {
               Optional. Wrap the tools your agent calls (sending email, writing files) so replays don't repeat their side
               effects. Both are included in the CLI package too.
             </p>
-            {whl && (<><h3>Python</h3><Copyable text={`pip install ${url(whl.file)}`} label="Copy the pip command" /></>)}
-            {tgz && (<><h3>JavaScript / TypeScript</h3><Copyable text={`npm install ${url(tgz.file)}`} label="Copy the npm command" /></>)}
+            {whl && (<><h3>Python</h3><Copyable label="Copy the pip command"
+              text={m.registries?.pypi ? "pip install khonsu-sdk" : `pip install ${url(whl.file)}`} /></>)}
+            {tgz && (<><h3>JavaScript / TypeScript</h3><Copyable label="Copy the npm command"
+              text={m.registries?.npm ? "npm install khonsu-sdk" : `npm install ${url(tgz.file)}`} /></>)}
+            {(m.registries?.pypi || m.registries?.npm) && (
+              <p className="muted small">
+                Published on {[m.registries.pypi && "PyPI", m.registries.npm && "npm"].filter(Boolean).join(" and ")}, so your
+                package manager keeps them up to date.
+              </p>
+            )}
           </section>
 
           <section className="dl-card">
