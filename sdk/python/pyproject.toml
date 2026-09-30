@@ -19,9 +19,6 @@ classifiers = [
 ]
 dependencies = []  # standard library only
 
-[project.urls]
-Homepage = "https://github.com/Lazeeez/Khonsu"
-
 [tool.setuptools.packages.find]
 where = ["src"]
 
