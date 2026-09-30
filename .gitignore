@@ -6,3 +6,6 @@ compile_commands.json
 __pycache__/
 *.pyc
 *.egg-info/
+# downloads are built by CI (scripts/package.sh) and served by the site; never committed
+web/public/downloads/
+dist/
