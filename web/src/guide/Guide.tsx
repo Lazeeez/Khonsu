@@ -27,7 +27,7 @@ function Code({ children }: { children: string }) {
   };
   return (
     <div className="g-code">
-      <pre>{children}</pre>
+      <pre tabIndex={0}>{children}</pre>
       <button className="g-copy" onClick={copy} aria-label="Copy to clipboard">{copied ? "Copied" : "Copy"}</button>
     </div>
   );
@@ -44,14 +44,14 @@ function Step({ n, children }: { n: number; children: React.ReactNode }) {
 
 const TOUR = [
   {
-    id: "viewer", href: "#/viewer?src=coding-agent.khn", name: "Viewer", phase: 0.25,
+    id: "viewer", href: "#/viewer?src=support-agent.khn", name: "Viewer", phase: 0.25,
     what: "Look inside a recorded run: every model call, every tool call, and the files as they were at each moment.",
     steps: [
-      <>Open the <b>Coding agent</b> sample. It is a real recording of an agent editing a small repository.</>,
+      <>Open the <b>Support agent</b> example: a real model handling a customer's refund request, recorded call by call. Press the <b>?</b> in the corner for the story of what happened.</>,
       <>Drag the moon around the <b>Moon Dial</b>, or use the arrow keys. Each mark on the orbit is one call; gold marks are model calls, turquoise marks are tools, red marks are failures.</>,
       <>Read the selected call on the right: the prompt, the model's answer, tool calls, tokens and timing.</>,
       <>Under <b>Workspace</b>, click a changed file to see exactly what that call did to it.</>,
-      <>Press <b>Compare with a re-run</b>: Khonsu lines up two runs of the same task and shows the first moment they diverged.</>,
+      <>Open the <b>Coding agent</b> example from <b>Examples</b> and press <b>Compare with a re-run</b>: the same agent and task, run twice, lined up call by call to show where they diverged.</>,
       <>Drop your own <code>.khn</code> recording, or an <b>OpenTelemetry GenAI</b> trace (JSON), anywhere on the page. It is parsed in your browser and never uploaded.</>,
     ],
   },
@@ -99,7 +99,7 @@ function Phase({ f }: { f: number }) {
 }
 
 export function Guide() {
-  const root = useRef<HTMLElement>(null);
+  const root = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState("what");
   useReveal(root);
 
@@ -125,7 +125,7 @@ export function Guide() {
   const go = (id: string) => document.getElementById(`g-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
-    <main className="guide" ref={root}>
+    <div className="guide" ref={root}>
       <header className="g-hero">
         <p className="eyebrow enter">The guide</p>
         <h1 className="display small-display enter" style={{ ["--d" as string]: "80ms" }}>How to use Khonsu</h1>
@@ -142,7 +142,7 @@ export function Guide() {
           ].map(([h, p], i) => (
             <div className="g-flow-step" key={h}>
               <Phase f={(i + 1) / 3} />
-              <h3>{h}</h3>
+              <h2 className="g-flow-h">{h}</h2>
               <p>{p}</p>
             </div>
           ))}
@@ -379,6 +379,6 @@ const writeFile = tool("writeFile", (path, text) => { ... },
           </section>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
