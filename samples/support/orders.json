@@ -1,0 +1,20 @@
+{
+  "A1042": {
+    "customer": "Dana Okafor",
+    "email": "dana.okafor@example.com",
+    "item": "Lunar Desk Lamp",
+    "price": 89.0,
+    "ordered": "2026-09-14",
+    "delivered": "2026-09-18",
+    "status": "delivered"
+  },
+  "A0977": {
+    "customer": "Sam Reyes",
+    "email": "sam.reyes@example.com",
+    "item": "Crescent Wall Clock",
+    "price": 54.0,
+    "ordered": "2026-06-02",
+    "delivered": "2026-06-05",
+    "status": "delivered"
+  }
+}
